@@ -1,0 +1,347 @@
+// 企业智脑 · 四步图形化创建向导
+(function () {
+  const STEPS = ['选择行业', '企业扫描', '部署布局', '录入人员'];
+
+  window.renderWizard = function () {
+    const app = $('#app');
+    app.innerHTML = `
+    <div class="wiz">
+      <header class="wiz-top">
+        <div class="logo"><div class="orb"><i class="fas fa-brain"></i></div><div>企业智脑<div class="dim" style="font-size:11px;font-weight:400">老板的 AI 经营指挥舱 · 数字孪生创建</div></div></div>
+        <nav class="steps">${STEPS.map((s, i) => `${i ? '<span class="step-line"></span>' : ''}<div class="step ${S.step === i + 1 ? 'on' : S.step > i + 1 ? 'done' : ''}" data-s="${i + 1}"><span class="n">${S.step > i + 1 ? '<i class="fas fa-check"></i>' : i + 1}</span>${s}</div>`).join('')}</nav>
+        <button class="btn btn-ghost btn-sm" id="btn-demo"><i class="fas fa-wand-magic-sparkles"></i>一键体验演示企业</button>
+      </header>
+      <main class="wiz-body" id="wiz-body"></main>
+      <footer class="wiz-foot">
+        <button class="btn btn-ghost" id="btn-prev" ${S.step === 1 ? 'style="visibility:hidden"' : ''}><i class="fas fa-arrow-left"></i>上一步</button>
+        <div class="hint" id="foot-hint"></div>
+        <button class="btn btn-pri" id="btn-next">${S.step === 4 ? '<i class="fas fa-rocket"></i>启动企业智脑' : '下一步<i class="fas fa-arrow-right"></i>'}</button>
+      </footer>
+    </div>`;
+    $$('.step').forEach((el) => el.onclick = () => { const s = +el.dataset.s; if (s < S.step) { S.step = s; saveState(); renderWizard(); } });
+    $('#btn-prev').onclick = () => { S.step--; saveState(); renderWizard(); };
+    $('#btn-next').onclick = next;
+    $('#btn-demo').onclick = loadDemo;
+    [null, stepIndustry, stepScan, stepLayout, stepStaff][S.step]();
+    updateNext();
+  };
+
+  function updateNext() {
+    const ok = [null, !!S.industry?.div, !!S.company.profile, S.depts.length >= 2, true][S.step];
+    $('#btn-next').disabled = !ok;
+    $('#foot-hint').textContent = [null,
+      S.industry?.div ? `已选：${S.industry.name} › ${S.industry.div.code} ${S.industry.div.name}` : '点击星球选择门类，再在右侧选择细分大类（GB/T 4754-2017 · 20门类 97大类）',
+      S.company.profile ? `画像置信度 ${S.company.profile.confidence}% · 证据 ${S.company.profile.evidence} 条` : '输入企业名称，启动全网扫描',
+      `已部署 ${S.depts.length} 个部门节点 · 拖动节点调整布局`,
+      `已录入 ${S.staff.length} 名员工 · 可跳过，后续在总部继续录入`][S.step];
+  }
+  window._updateNext = updateNext;
+
+  function next() {
+    if (S.step === 4) return launch();
+    if (S.step === 2 && !S.depts.length) autoLayout();
+    S.step++; saveState(); renderWizard();
+  }
+
+  // ---------- STEP 1 行业星图 ----------
+  function stepIndustry() {
+    const body = $('#wiz-body');
+    body.innerHTML = `
+    <section class="stage galaxy-wrap">
+      <div class="galaxy" id="galaxy"><svg class="orbits" id="orbits"></svg>
+        <div class="core" id="core"><div class="inner">${S.industry ? `<div><i class="fas ${S.industry.icon}" style="font-size:22px;color:${S.industry.color}"></i><div style="margin-top:4px">${esc(S.industry.name)}</div></div>` : '<div><i class="fas fa-earth-asia" style="font-size:24px;color:var(--c1)"></i><div style="margin-top:4px">选择你的<br>行业星球</div></div>'}</div></div>
+      </div>
+      <aside class="ind-side">
+        <div><div class="h2">你的企业属于哪个行业？</div><div class="hint mt">依据《国民经济行业分类》GB/T 4754-2017，覆盖全国 20 个门类、97 个大类及常见细分领域。</div></div>
+        <div style="position:relative"><i class="fas fa-magnifying-glass" style="position:absolute;left:12px;top:13px;color:var(--dim)"></i><input id="ind-search" placeholder="搜索：如 预制菜 / 光伏 / 灵活用工 / 口腔" style="width:100%;padding-left:34px"></div>
+        <div class="div-list" id="div-list"></div>
+      </aside>
+    </section>`;
+    const g = $('#galaxy');
+    const place = () => {
+      const W = g.clientWidth, H = g.clientHeight, cx = W / 2, cy = H / 2;
+      $('#core').style.left = cx + 'px'; $('#core').style.top = cy + 'px';
+      const r1 = Math.min(W, H) * 0.27, r2 = Math.min(W, H) * 0.44;
+      $('#orbits').innerHTML = [r1, r2].map((r) => `<ellipse cx="${cx}" cy="${cy}" rx="${r * 1.25}" ry="${r}" fill="none" stroke="rgba(120,170,255,.15)" stroke-dasharray="4 6"/>`).join('');
+      $$('.planet', g).forEach((p, i) => {
+        const inner = i < 8; const n = inner ? 8 : 12; const k = inner ? i : i - 8;
+        const a = (k / n) * Math.PI * 2 - Math.PI / 2 + (inner ? 0 : 0.26);
+        const r = inner ? r1 : r2;
+        p.style.left = cx + Math.cos(a) * r * 1.25 + 'px'; p.style.top = cy + Math.sin(a) * r + 'px';
+      });
+    };
+    INDUSTRIES.forEach((ind) => {
+      const p = document.createElement('div');
+      p.className = 'planet' + (S.industry?.code === ind.code ? ' sel' : '');
+      p.style.setProperty('--pc', ind.color);
+      p.innerHTML = `<div class="ball" style="background:radial-gradient(circle at 30% 30%,${ind.color},${ind.color}55 70%)"><i class="fas ${ind.icon}"></i><span class="code">${ind.code}</span></div><div class="lbl">${ind.name}</div>`;
+      p.onclick = () => selectCat(ind);
+      g.appendChild(p);
+    });
+    place(); window.onresize = place;
+    renderDivs(S.industry ? INDUSTRIES.find((i) => i.code === S.industry.code) : null);
+    $('#ind-search').oninput = (e) => searchInd(e.target.value.trim());
+  }
+  function selectCat(ind) {
+    S.industry = { code: ind.code, name: ind.name, icon: ind.icon, color: ind.color, div: null };
+    $$('.planet').forEach((p, i) => p.classList.toggle('sel', INDUSTRIES[i].code === ind.code));
+    $('#core .inner').innerHTML = `<div><i class="fas ${ind.icon}" style="font-size:22px;color:${ind.color}"></i><div style="margin-top:4px">${esc(ind.name)}</div></div>`;
+    renderDivs(ind); saveState(); updateNext();
+  }
+  function renderDivs(ind, list) {
+    const box = $('#div-list');
+    const items = list || (ind ? ind.divisions.map((d) => ({ ind, d })) : []);
+    if (!items.length) { box.innerHTML = `<div class="empty-state"><div><i class="fas fa-hand-pointer" style="font-size:28px"></i><p class="mt">点击左侧任一行业星球</p></div></div>`; return; }
+    box.innerHTML = items.map(({ ind, d }) => `<div class="div-item ${S.industry?.div?.code === d[0] ? 'sel' : ''}" data-c="${ind.code}" data-d="${d[0]}">
+      <div><span class="cd">${ind.code}${d[0]}</span><b>${d[1]}</b>${list ? `<span class="tag p" style="margin-left:6px">${ind.name}</span>` : ''}</div><div class="kw">${d[2]}</div></div>`).join('');
+    $$('.div-item', box).forEach((el) => el.onclick = () => {
+      const ind = INDUSTRIES.find((i) => i.code === el.dataset.c); const d = ind.divisions.find((x) => x[0] === el.dataset.d);
+      if (S.industry?.code !== ind.code) selectCat(ind);
+      S.industry.div = { code: d[0], name: d[1], kw: d[2] };
+      $$('.div-item').forEach((x) => x.classList.remove('sel')); el.classList.add('sel');
+      S.company.profile = null; S.depts = []; saveState(); updateNext();
+      toast(`已锁定行业：${d[1]}`, 'fa-location-crosshairs');
+    });
+  }
+  function searchInd(q) {
+    if (!q) { $$('.planet').forEach((p) => p.classList.remove('dimmed')); return renderDivs(S.industry ? INDUSTRIES.find((i) => i.code === S.industry.code) : null); }
+    const res = [];
+    INDUSTRIES.forEach((ind) => ind.divisions.forEach((d) => { if ((ind.name + d[1] + d[2]).includes(q)) res.push({ ind, d }); }));
+    const codes = new Set(res.map((r) => r.ind.code));
+    $$('.planet').forEach((p, i) => p.classList.toggle('dimmed', !codes.has(INDUSTRIES[i].code)));
+    renderDivs(null, res);
+  }
+
+  // ---------- STEP 2 企业扫描 ----------
+  const SOURCES = [
+    { n: '维基百科', i: 'fa-book-open' }, { n: '必应资讯', i: 'fa-newspaper' }, { n: '工商公示', i: 'fa-id-card' },
+    { n: '招聘信息', i: 'fa-user-tie' }, { n: '招投标', i: 'fa-gavel' }, { n: '知识产权', i: 'fa-lightbulb' },
+    { n: '社媒声量', i: 'fa-hashtag' }, { n: '行业对标', i: 'fa-chart-simple' }
+  ];
+  function stepScan() {
+    const body = $('#wiz-body');
+    body.innerHTML = `
+    <section class="stage scan-wrap">
+      <div class="radar-box">
+        <div class="radar" id="radar">
+          ${[90, 190, 290, 378].map((s) => `<div class="ring" style="width:${s}px;height:${s}px"></div>`).join('')}
+          <div class="sweep"></div>
+          <div class="center" id="r-center">${S.company.name ? esc(S.company.name) : '<span class="dim">待扫描企业</span>'}</div>
+          ${SOURCES.map((s, i) => { const a = i / SOURCES.length * Math.PI * 2 - Math.PI / 2; return `<div class="src-node" style="left:${190 + Math.cos(a) * 150}px;top:${190 + Math.sin(a) * 150}px"><div class="d"><i class="fas ${s.i}"></i></div>${s.n}</div>`; }).join('')}
+        </div>
+        <div class="name-input"><input id="co-name" placeholder="输入企业全称，例如：华为技术有限公司" value="${esc(S.company.name)}"><button class="btn btn-pri" id="btn-scan"><i class="fas fa-satellite-dish"></i>全网扫描</button></div>
+        <div class="scan-log" id="scan-log">> 就绪：将从合法公开来源采集企业信息，并结合「${esc(S.industry?.div?.name || '')}」行业知识生成企业画像。</div>
+      </div>
+      <div class="report" id="report"></div>
+    </section>`;
+    $('#btn-scan').onclick = doScan;
+    $('#co-name').onkeydown = (e) => e.key === 'Enter' && doScan();
+    if (S.company.profile) renderReport(); else $('#report').innerHTML = `<div class="empty-state"><div><i class="fas fa-radar" style="font-size:40px"></i><i class="fas fa-satellite" style="font-size:40px;color:var(--c1)"></i><p class="mt h3">企业体系与价值分析报告</p><p class="hint mt">扫描完成后在此生成：企业定位 · 价值链 · 商业模式画布 · 七域诊断 · 机会与风险</p></div></div>`;
+  }
+  async function doScan() {
+    const name = $('#co-name').value.trim();
+    if (!name) return toast('请输入企业名称', 'fa-triangle-exclamation');
+    S.company.name = name; $('#r-center').textContent = name;
+    const log = $('#scan-log'); log.innerHTML = '';
+    const L = (t) => { log.innerHTML += `<div>> ${t}</div>`; log.scrollTop = 1e9; };
+    $('#radar').classList.add('on'); $('#btn-scan').disabled = true;
+    $$('.src-node').forEach((n) => n.classList.remove('hit', 'miss'));
+    L(`锁定目标：${name}`); L('并行接入公开情报源…');
+    let scan = null;
+    const p = fetch(`/api/scan?name=${encodeURIComponent(name)}&industry=${encodeURIComponent(S.industry?.div?.name || '')}`).then((r) => r.json()).catch(() => null);
+    const nodes = $$('.src-node');
+    for (let i = 2; i < nodes.length; i++) { await sleep(320); nodes[i].classList.add('hit'); L(`${SOURCES[i].n}：行业知识库推断完成（需后续授权接入真实数据）`); }
+    scan = await p;
+    nodes[0].classList.add(scan?.wiki ? 'hit' : 'miss'); nodes[1].classList.add(scan?.news?.length ? 'hit' : 'miss');
+    L(`维基百科：${scan?.wiki ? '命中词条「' + scan.wiki.title + '」' : '未命中'}`);
+    L(`必应资讯：相关结果 ${scan?.news?.length || 0} 条`);
+    await sleep(400); L('构建企业价值链与商业模式画布…'); await sleep(500); L('执行七域经营诊断…'); await sleep(500);
+    S.company.scan = scan || { news: [], wiki: null };
+    S.company.profile = buildProfile(S.company.scan);
+    L(`<span style="color:var(--ok)">完成！画像置信度 ${S.company.profile.confidence}%</span>`);
+    $('#radar').classList.remove('on'); $('#btn-scan').disabled = false;
+    S.depts = []; saveState(); renderReport(); updateNext();
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  window.sleep = sleep;
+  function renderReport() {
+    const P = S.company.profile, sc = S.company.scan || {};
+    $('#report').innerHTML = `
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-building" style="color:var(--c1)"></i> ${esc(S.company.name)}</span><span class="tag ${P.confidence > 60 ? 'ok' : 'warn'}">置信度 ${P.confidence}%</span></div>
+        <p style="line-height:1.7">${esc(P.positioning)}</p>
+        ${sc.wiki ? `<p class="muted mt" style="font-size:12px;line-height:1.7">${esc(sc.wiki.extract.slice(0, 260))}… <a href="${sc.wiki.url}" target="_blank" style="color:var(--c1)">维基来源</a></p>` : '<p class="hint mt">未检索到百科词条，以下画像以行业知识推断为主，建议上传企业介绍/官网链接提高精度。</p>'}
+      </div>
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-link" style="color:var(--c2)"></i> 企业价值链</span></div>
+        <div class="vchain">${P.chain.map((c, i) => `${i ? '<i class="fas fa-angle-right ar"></i>' : ''}<span class="v">${c}</span>`).join('')}</div></div>
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-heart-pulse" style="color:var(--c3)"></i> 七域经营诊断（初判）</span></div>
+        ${P.domains.map((d) => `<div class="flex" style="margin:6px 0"><span style="width:70px;font-size:12px">${d.name}</span><div class="bar" style="flex:1"><i style="width:${d.score}%;${d.score < 60 ? 'background:linear-gradient(90deg,#ff5d6c,#ffb547)' : ''}"></i></div><b style="width:30px;text-align:right;font-size:12px">${d.score}</b></div>`).join('')}
+        <p class="hint mt">短板：${P.weakest.map((w) => w.name).join('、')} —— 将作为首批增长项目候选。</p></div>
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-table-cells" style="color:var(--warn)"></i> 商业模式画布（精简）</span></div>
+        <div class="grid2" style="gap:8px">${Object.entries(P.canvas).map(([k, v]) => `<div style="padding:8px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid var(--line)"><div class="dim" style="font-size:11px">${k}</div><div style="font-size:12px;margin-top:3px">${esc(v)}</div></div>`).join('')}</div></div>
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-lightbulb" style="color:var(--ok)"></i> 生意机会</span></div>${P.opportunities.map((o) => `<div class="flex" style="align-items:flex-start;margin:6px 0;font-size:13px"><i class="fas fa-circle-check" style="color:var(--ok);margin-top:3px"></i>${esc(o)}</div>`).join('')}
+        <div class="hint mt">${P.risks.map((r) => '⚠ ' + r).join('<br>')}</div></div>
+      ${sc.news?.length ? `<div class="card"><div class="ct"><span class="h3"><i class="fas fa-newspaper"></i> 公开资讯证据（${sc.news.length}）</span></div>${sc.news.map((n) => `<div class="news-item"><a href="${esc(n.link)}" target="_blank">${esc(n.title)}</a><p>${esc(n.desc)}</p><span class="dim" style="font-size:11px">${esc(n.source)}</span></div>`).join('')}</div>` : ''}`;
+  }
+
+  // ---------- STEP 3 部署布局 ----------
+  function autoLayout() {
+    const ids = [...new Set([...INDUSTRY_DEPTS.base, ...(INDUSTRY_DEPTS[S.industry?.code] || [])])];
+    S.depts = ids.map((id) => { const l = deptLib(id); return { id: uid('d'), lib: id, name: l.name, icon: l.icon, color: l.color }; });
+    arrange();
+  }
+  function arrange() {
+    const n = S.depts.length;
+    S.depts.forEach((d, i) => { const a = (i / n) * Math.PI * 2 - Math.PI / 2 + Math.PI / n; d.x = 50 + Math.cos(a) * 36; d.y = 56 + Math.sin(a) * 34; });
+  }
+  function stepLayout() {
+    const body = $('#wiz-body');
+    body.innerHTML = `
+    <section class="stage layout-wrap">
+      <aside class="palette">
+        <div class="h3">部门模块库</div><div class="hint">点击或拖拽到画布添加；AI 已按「${esc(S.industry?.div?.name || '')}」推荐初始布局。</div>
+        <div class="pal-list" id="pal-list"></div>
+        <div class="flex"><input id="custom-dept" placeholder="自定义部门名称" style="flex:1;min-width:0"><button class="btn btn-ghost btn-sm" id="add-custom"><i class="fas fa-plus"></i></button></div>
+      </aside>
+      <div class="canvas" id="canvas"><svg id="links"></svg>
+        <div class="canvas-tools"><button class="btn btn-ghost btn-sm" id="re-ai"><i class="fas fa-wand-magic-sparkles"></i>AI 重新推荐</button><button class="btn btn-ghost btn-sm" id="re-arr"><i class="fas fa-circle-nodes"></i>自动环形排布</button><button class="btn btn-ghost btn-sm" id="clr"><i class="fas fa-eraser"></i>清空</button></div>
+        <div class="canvas-tip"><i class="fas fa-hand"></i> 拖动节点调整组织布局 · 悬停节点可删除</div>
+      </div>
+    </section>`;
+    renderPalette(); renderCanvas();
+    $('#re-ai').onclick = () => { autoLayout(); saveState(); renderPalette(); renderCanvas(); toast('AI 已根据行业与企业画像重新规划部门', 'fa-wand-magic-sparkles'); };
+    $('#re-arr').onclick = () => { arrange(); saveState(); renderCanvas(); };
+    $('#clr').onclick = () => { S.depts = []; saveState(); renderPalette(); renderCanvas(); };
+    $('#add-custom').onclick = () => { const v = $('#custom-dept').value.trim(); if (!v) return; addDept(null, v); $('#custom-dept').value = ''; };
+    const cv = $('#canvas');
+    cv.ondragover = (e) => e.preventDefault();
+    cv.ondrop = (e) => { e.preventDefault(); const id = e.dataTransfer.getData('lib'); if (!id) return; const r = cv.getBoundingClientRect(); addDept(id, null, (e.clientX - r.left) / r.width * 100, (e.clientY - r.top) / r.height * 100); };
+  }
+  function addDept(lib, custom, x, y) {
+    const l = lib ? deptLib(lib) : null;
+    if (l && S.depts.some((d) => d.lib === lib)) return toast('该部门已在布局中');
+    S.depts.push({ id: uid('d'), lib: lib || 'custom', name: l ? l.name : custom, icon: l ? l.icon : 'fa-sitemap', color: l ? l.color : '#00e5ff', x: x ?? rand(15, 85), y: y ?? rand(40, 88) });
+    saveState(); renderPalette(); renderCanvas(); updateNext();
+  }
+  function renderPalette() {
+    $('#pal-list').innerHTML = DEPT_LIBRARY.map((d) => `<div class="pal-item ${S.depts.some((x) => x.lib === d.id) ? 'used' : ''}" draggable="true" data-id="${d.id}"><span class="ic" style="background:${d.color}33;color:${d.color}"><i class="fas ${d.icon}"></i></span>${d.name}<span class="dim" style="margin-left:auto;font-size:11px">${d.agents.length}AI</span></div>`).join('');
+    $$('.pal-item').forEach((el) => { el.ondragstart = (e) => e.dataTransfer.setData('lib', el.dataset.id); el.onclick = () => addDept(el.dataset.id); });
+  }
+  function renderCanvas() {
+    const cv = $('#canvas'); $$('.node', cv).forEach((n) => n.remove());
+    const mk = (cls, html, x, y) => { const n = document.createElement('div'); n.className = 'node ' + cls; n.style.left = x + '%'; n.style.top = y + '%'; n.innerHTML = html; cv.appendChild(n); return n; };
+    mk('boss', `<div class="ic"><i class="fas fa-crown"></i></div><div class="nm">老板 · 决策中心</div><div class="ag">审批 L4 高风险动作</div>`, 50, 9);
+    mk('brain', `<div class="ic" style="background:linear-gradient(135deg,var(--c1),var(--c2))"><i class="fas fa-brain"></i></div><div class="nm">企业智脑中枢</div><div class="ag">六引擎 · 双域情报</div>`, 50, 56);
+    S.depts.forEach((d) => {
+      const l = deptLib(d.lib);
+      const n = mk('', `<button class="x"><i class="fas fa-xmark"></i></button><div class="ic" style="background:${d.color}"><i class="fas ${d.icon}"></i></div><div class="nm">${esc(d.name)}</div><div class="ag"><i class="fas fa-robot"></i> ${l ? l.agents.length : 2} 个核心Agent</div>`, d.x, d.y);
+      n.style.setProperty('--nc', d.color);
+      $('.x', n).onclick = (e) => { e.stopPropagation(); S.depts = S.depts.filter((x) => x.id !== d.id); S.staff = S.staff.filter((s) => s.deptId !== d.id); saveState(); renderPalette(); renderCanvas(); updateNext(); };
+      n.onpointerdown = (e) => {
+        if (e.target.closest('.x')) return;
+        const r = cv.getBoundingClientRect(); n.setPointerCapture(e.pointerId);
+        n.onpointermove = (ev) => { d.x = Math.max(6, Math.min(94, (ev.clientX - r.left) / r.width * 100)); d.y = Math.max(8, Math.min(94, (ev.clientY - r.top) / r.height * 100)); n.style.left = d.x + '%'; n.style.top = d.y + '%'; drawLinks(); };
+        n.onpointerup = () => { n.onpointermove = null; saveState(); };
+      };
+    });
+    drawLinks();
+  }
+  function drawLinks() {
+    const cv = $('#canvas'); const W = cv.clientWidth, H = cv.clientHeight;
+    const bx = W * .5, by = H * .56;
+    let s = `<defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#3ee0ff"/><stop offset="1" stop-color="#8b5cff"/></linearGradient></defs>`;
+    s += `<path d="M${W * .5} ${H * .09 + 40} L${bx} ${by - 45}" stroke="#ffd54f" stroke-width="2" class="flow" fill="none"/>`;
+    S.depts.forEach((d) => { const x = d.x / 100 * W, y = d.y / 100 * H; const mx = (x + bx) / 2, my = (y + by) / 2 - 30; s += `<path d="M${bx} ${by} Q${mx} ${my} ${x} ${y}" stroke="${d.color}" stroke-opacity=".7" stroke-width="1.6" class="flow" fill="none"/>`; });
+    $('#links').innerHTML = s;
+  }
+
+  // ---------- STEP 4 录入人员 ----------
+  let curDept = null;
+  function stepStaff() {
+    if (!curDept || !S.depts.find((d) => d.id === curDept)) curDept = S.depts[0]?.id;
+    const body = $('#wiz-body');
+    body.innerHTML = `
+    <section class="stage staff-wrap">
+      <aside class="dept-tabs" id="dept-tabs"></aside>
+      <div class="staff-main">
+        <div class="staff-form glass" style="padding:16px">
+          <div class="h3" id="form-title">录入员工</div>
+          <div class="flex"><div class="col" style="flex:1;gap:4px"><label>姓名</label><input id="f-name"></div><div class="col" style="width:90px;gap:4px"><label>工龄(年)</label><input id="f-years" type="number" value="3" min="0"></div></div>
+          <div class="col" style="gap:4px"><label>岗位</label><input id="f-pos" placeholder="如：销售经理"></div>
+          <div class="col" style="gap:4px"><label>简历 / 价值描述（粘贴文本或上传 .txt）</label><textarea id="f-resume" rows="6" placeholder="例：5年B2B大客户销售经验，擅长渠道拓展与谈判，熟练使用Excel与CRM，年度回款800万……"></textarea></div>
+          <div class="flex"><label class="btn btn-ghost btn-sm" style="cursor:pointer"><i class="fas fa-file-arrow-up"></i>上传简历<input type="file" id="f-file" accept=".txt,.md" hidden></label><span class="hint" id="f-skills">AI 将自动识别技能标签</span></div>
+          <button class="btn btn-pri" id="f-add"><i class="fas fa-user-plus"></i>录入并评估价值</button>
+          <button class="btn btn-ghost" id="f-gen"><i class="fas fa-wand-magic-sparkles"></i>AI 生成本部门示例员工</button>
+          <button class="btn btn-ghost" id="f-genall"><i class="fas fa-users"></i>为所有部门一键生成</button>
+        </div>
+        <div class="staff-grid" id="staff-grid"></div>
+      </div>
+    </section>`;
+    $('#f-resume').oninput = (e) => { const sk = parseSkills(e.target.value); $('#f-skills').innerHTML = sk.length ? sk.map((s) => `<span class="tag">${s}</span>`).join(' ') : 'AI 将自动识别技能标签'; };
+    $('#f-file').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $('#f-resume').value = String(rd.result).slice(0, 3000); $('#f-resume').oninput({ target: $('#f-resume') }); }; rd.readAsText(f); };
+    $('#f-add').onclick = () => {
+      const name = $('#f-name').value.trim(); if (!name) return toast('请填写姓名');
+      const resume = $('#f-resume').value.trim();
+      addStaff({ name, pos: $('#f-pos').value.trim() || '专员', years: +$('#f-years').value || 0, resume, skills: parseSkills(resume) });
+      ['#f-name', '#f-pos', '#f-resume'].forEach((s) => $(s).value = ''); $('#f-skills').textContent = 'AI 将自动识别技能标签';
+    };
+    $('#f-gen').onclick = () => { genFor(curDept, rand(2, 4)); renderStaff(); };
+    $('#f-genall').onclick = () => { S.depts.forEach((d) => { if (!S.staff.some((s) => s.deptId === d.id)) genFor(d.id, rand(2, 4)); }); renderStaff(); toast('已为所有部门生成示例员工', 'fa-users'); };
+    renderStaff();
+  }
+  function addStaff(p) {
+    const s = { id: uid('p'), deptId: curDept, ...p }; s.value = scoreStaff(s);
+    S.staff.push(s); saveState(); renderStaff(); toast(`${s.name} 已入职 · 价值评分 ${s.value}`, 'fa-user-check');
+  }
+  window.genFor = function (deptId, n) {
+    const d = S.depts.find((x) => x.id === deptId); const l = deptLib(d.lib);
+    const base = d.name.replace(/部$/, '');
+    const pos = [base + '总监', base + '经理', '高级' + base + '专员', base + '专员', base + '助理'];
+    for (let i = 0; i < n; i++) {
+      const skills = [...new Set([...(l ? SKILL_DICT.filter((k) => (l.name + l.tasks.join('')).includes(k)) : []), pick(SKILL_DICT), pick(SKILL_DICT)])].slice(0, 5);
+      const years = i === 0 ? rand(8, 15) : rand(1, 8);
+      const s = { id: uid('p'), deptId, name: genName(), pos: pos[Math.min(i, 4)], years, skills, resume: `${years}年${base}相关经验，擅长${skills.join('、')}。` };
+      s.value = scoreStaff(s); S.staff.push(s);
+    }
+    saveState();
+  };
+  function renderStaff() {
+    $('#dept-tabs').innerHTML = `<div class="h3" style="padding:4px 6px 8px">部门</div>` + S.depts.map((d) => `<div class="dept-tab ${d.id === curDept ? 'on' : ''}" data-id="${d.id}"><span class="ic" style="width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:${d.color}33;color:${d.color}"><i class="fas ${d.icon}" style="font-size:12px"></i></span>${esc(d.name)}<span class="cnt">${S.staff.filter((s) => s.deptId === d.id).length}</span></div>`).join('');
+    $$('.dept-tab').forEach((el) => el.onclick = () => { curDept = el.dataset.id; renderStaff(); });
+    const d = S.depts.find((x) => x.id === curDept);
+    $('#form-title').innerHTML = `录入员工 · <span style="color:${d?.color}">${esc(d?.name || '')}</span>`;
+    const list = S.staff.filter((s) => s.deptId === curDept);
+    $('#staff-grid').innerHTML = list.length ? list.map((p) => `<div class="person"><div class="top"><div class="avatar" style="background:${avColor(p.name)}">${esc(p.name[0])}</div><div><b>${esc(p.name)}</b><div class="dim" style="font-size:12px">${esc(p.pos)} · ${p.years}年</div></div></div>
+      <div class="val"><div class="dim" style="font-size:10px">价值评分</div><b class="grad-txt">${p.value}</b></div>
+      <div class="bar mt"><i style="width:${p.value}%"></i></div>
+      <div class="sk">${p.skills.map((s) => `<span class="tag">${s}</span>`).join('') || '<span class="dim" style="font-size:12px">暂无技能标签</span>'}</div>
+      <p class="dim" style="font-size:11px;margin-top:8px;line-height:1.5;max-height:34px;overflow:hidden">${esc(p.resume)}</p>
+      <button class="del" data-id="${p.id}"><i class="fas fa-trash"></i></button></div>`).join('')
+      : `<div class="empty-state" style="grid-column:1/-1;height:300px"><div><i class="fas fa-user-astronaut" style="font-size:36px"></i><p class="mt">该部门还没有员工</p><p class="hint">手动录入或点击「AI 生成示例员工」</p></div></div>`;
+    $$('.person .del').forEach((b) => b.onclick = () => { S.staff = S.staff.filter((s) => s.id !== b.dataset.id); saveState(); renderStaff(); });
+    updateNext();
+  }
+
+  // ---------- 启动 ----------
+  async function launch() {
+    S.depts.forEach((d) => { if (!S.staff.some((s) => s.deptId === d.id)) genFor(d.id, 2); });
+    buildAgents();
+    const el = document.createElement('div'); el.className = 'launch';
+    el.innerHTML = `<div style="text-align:center"><div class="big"><i class="fas fa-brain"></i></div><div class="lines" id="ll"></div></div>`;
+    document.body.appendChild(el);
+    const lines = [`载入企业画像：${S.company.name}`, `映射组织：${S.depts.length} 个部门 · ${S.staff.length} 名员工`, `孵化智能体：${S.agents.length} 个 Agent 已上岗`, '挂载六引擎：诊断 / 情报 / 策略 / 编排 / 实验 / 进化', '部署管理机制：评测五维 · 每日校验 · 督办升级 · 审批护栏', '<span style="color:var(--ok)">数字孪生总部已上线 ✔</span>'];
+    for (const l of lines) { await sleep(480); $('#ll').innerHTML += `<div>▸ ${l}</div>`; }
+    await sleep(700);
+    S.launched = true; S.sim = null; saveState(); el.remove(); renderApp();
+  }
+
+  // ---------- 演示企业 ----------
+  function loadDemo() {
+    const ind = INDUSTRIES.find((i) => i.code === 'C'); const d = ind.divisions.find((x) => x[0] === '38');
+    S.industry = { code: 'C', name: ind.name, icon: ind.icon, color: ind.color, div: { code: d[0], name: d[1], kw: d[2] } };
+    S.company = { name: '星澜新能源科技有限公司', scan: { news: [], wiki: null }, profile: null };
+    S.company.profile = buildProfile(S.company.scan);
+    S.staff = []; autoLayout();
+    S.depts.forEach((x) => genFor(x.id, rand(2, 4)));
+    S.step = 4; saveState(); renderWizard(); toast('已载入演示企业：星澜新能源（电气机械和器材制造业）', 'fa-wand-magic-sparkles');
+  }
+})();
