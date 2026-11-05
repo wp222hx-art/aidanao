@@ -36,6 +36,8 @@
           ${P.opportunities.slice(0, 3).map((o) => `<div style="font-size:12px;margin-top:6px"><i class="fas fa-lightbulb" style="color:var(--warn)"></i> ${esc(o)}</div>`).join('')}
         </div>
       </div>
+      <div class="card mt" id="brief-card"><div class="ct"><span class="h3"><i class="fas fa-file-lines" style="color:var(--c1)"></i> AI 经营日报</span><button class="btn btn-ghost btn-sm" onclick="AI.brief()" ${window.AI && AI.on ? '' : 'disabled title="需连接 Genspark"'}><i class="fas fa-wand-magic-sparkles"></i>${AI && AI.briefing ? '生成中…' : '生成今日日报'}</button></div>
+        ${S.sim.brief ? `<div class="md">${mdRender(S.sim.brief.text)}</div><div class="hint mt">第 ${S.sim.brief.day} 天 ${S.sim.brief.t} 生成 · Genspark AI · 基于平台运行数据</div>` : '<div class="hint">点击生成：AI 汇总今日任务、商机、评测、督办与审批数据，写成老板简报。</div>'}</div>
       <div class="card mt"><div class="ct"><span class="h3">部门运转矩阵</span><span class="dim" style="font-size:11px">点击部门查看详情</span></div>
         <div class="grid4">${S.depts.map((d) => { const open = S.sim.tasks.filter((t) => t.deptId === d.id && t.status !== 'done'); const done = S.sim.tasks.filter((t) => t.deptId === d.id && t.status === 'done').length; const warn = open.filter((t) => t.esc > 0).length; return `<div class="stat" style="cursor:pointer;border-left:3px solid ${d.color}" onclick="openDeptDrawer('${d.id}')"><div class="flex between"><b style="font-size:13px"><i class="fas ${d.icon}" style="color:${d.color}"></i> ${esc(d.name)}</b>${warn ? `<span class="tag warn">督办${warn}</span>` : '<span class="tag ok">正常</span>'}</div><div class="flex between mt" style="font-size:12px"><span class="muted">在办 ${open.length}</span><span class="muted">完成 ${done}</span><span class="muted">${S.agents.filter((a) => a.deptId === d.id).length} AI</span></div></div>`; }).join('')}</div></div>`;
   }
@@ -70,7 +72,7 @@
         </div>
         <div class="col" id="lead-list"></div>
       </div>`;
-    $('#scan-now').onclick = async () => { toast('销售 Agent 正在全网扫描…', 'fa-satellite-dish'); await fetchRealLeads(); for (let i = 0; i < 3; i++) setTimeout(findLead, i * 700); setTimeout(renderLeadList, 2400); };
+    $('#scan-now').onclick = async () => { if (window.AI && AI.on) { await AI.scanLeads(true); renderLeadList(); return; } toast('销售 Agent 正在全网扫描…', 'fa-satellite-dish'); await fetchRealLeads(); for (let i = 0; i < 3; i++) setTimeout(findLead, i * 700); setTimeout(renderLeadList, 2400); };
     $$('[data-kw]').forEach((b) => b.onclick = () => searchKw(b.dataset.kw));
     $('#kw-go').onclick = () => searchKw($('#kw-in').value.trim());
     renderLeadList();
@@ -88,7 +90,8 @@
     box.innerHTML = `<div class="flex between"><span class="h3">线索池（${L.length}）</span><span class="dim" style="font-size:12px">A级自动同步 · B/C级可手动同步</span></div>` + (L.length ? L.slice(0, 30).map((l) => `<div class="lead"><div class="grade g-${l.grade}">${l.grade}</div><div style="flex:1;min-width:0">
       <div style="font-weight:600;font-size:13px">${l.link ? `<a href="${esc(l.link)}" target="_blank" style="color:inherit;text-decoration:none">${esc(l.title)} <i class="fas fa-up-right-from-square" style="font-size:10px;color:var(--c1)"></i></a>` : esc(l.title)}</div>
       ${l.desc ? `<div class="dim" style="font-size:11px;margin-top:3px;line-height:1.5">${esc(l.desc.slice(0, 110))}</div>` : ''}
-      <div class="flex wrap" style="gap:6px;margin-top:6px"><span class="tag ${stl[l.status][1]}">${stl[l.status][0]}</span><span class="tag p">匹配 ${l.match}%</span><span class="tag">预估 ¥${fmtMoney(l.value)}</span><span class="dim" style="font-size:11px">${esc(l.source)} · D${l.day}</span>${l.real ? '<span class="tag ok">公开网页</span>' : '<span class="tag warn">模型推断</span>'}</div></div>
+      ${l.reason ? `<div style="font-size:12px;margin-top:5px;color:var(--c1)"><i class="fas fa-brain"></i> ${esc(l.reason)}${l.next ? ` <span class="muted">→ 下一步：${esc(l.next)}</span>` : ''}${l.buyer && l.buyer !== '未知' ? ` <span class="tag p">采购方：${esc(l.buyer)}</span>` : ''}</div>` : ''}
+      <div class="flex wrap" style="gap:6px;margin-top:6px"><span class="tag ${stl[l.status][1]}">${stl[l.status][0]}</span><span class="tag p">匹配 ${l.match}%</span>${l.value ? `<span class="tag">预估 ¥${fmtMoney(l.value)}</span>` : '<span class="tag">金额待确认</span>'}<span class="dim" style="font-size:11px">${esc(l.source)} · D${l.day}</span>${l.ai ? '<span class="tag ok">Genspark全网·AI分级</span>' : l.real ? '<span class="tag ok">公开网页</span>' : '<span class="tag warn">仿真线索</span>'}</div></div>
       ${l.status === 'new' ? `<button class="btn btn-ghost btn-sm" onclick="syncLeadUI('${l.id}')"><i class="fas fa-share-nodes"></i>同步</button>` : ''}</div>`).join('') : '<div class="empty-state" style="height:200px">雷达扫描中，商机即将出现…</div>');
   }
   window.syncLeadUI = (id) => { const l = S.sim.leads.find((x) => x.id === id); if (l) { syncLead(l); toast('已同步至相关部门并生成报价审批', 'fa-share-nodes'); renderLeadList(); } };
@@ -116,7 +119,7 @@
     const T = S.sim.tasks.filter((t) => t.status !== 'done' || t.day === S.sim.day);
     const cols = [['todo', '待办'], ['doing', '执行中'], ['rework', '返工/复核'], ['done', '今日完成']];
     p.innerHTML = hd('fa-diagram-project', '行动编排看板', '目标拆解 → 任务分派 → 执行 → 评测 → 返工/复核 → 完成；跨部门任务带来源标记')
-      + `<div class="kanban">${cols.map(([k, n]) => { const list = T.filter((t) => k === 'rework' ? (t.status === 'rework' || t.status === 'review') : t.status === k); return `<div class="kcol"><h4>${n}<span>${list.length}</span></h4>${list.slice(0, 18).map((t) => `<div class="kcard" style="border-left:3px solid ${deptColor(t.deptId)}">${t.kind === 'cmd' ? '<i class="fas fa-crown" style="color:#ffd54f"></i> ' : t.kind === 'lead' ? '<i class="fas fa-crosshairs" style="color:var(--ok)"></i> ' : ''}${esc(t.title)}
+      + `<div class="kanban">${cols.map(([k, n]) => { const list = T.filter((t) => k === 'rework' ? (t.status === 'rework' || t.status === 'review') : t.status === k); return `<div class="kcol"><h4>${n}<span>${list.length}</span></h4>${list.slice(0, 18).map((t) => `<div class="kcard" onclick="openTaskModal('${t.id}')" style="cursor:pointer;border-left:3px solid ${deptColor(t.deptId)}">${t.real ? '<span class="tag ok" style="font-size:10px;padding:0 5px">AI</span> ' : ''}${t.kind === 'cmd' ? '<i class="fas fa-crown" style="color:#ffd54f"></i> ' : t.kind === 'lead' ? '<i class="fas fa-crosshairs" style="color:var(--ok)"></i> ' : ''}${esc(t.title)}
         ${t.status === 'doing' || t.status === 'rework' ? `<div class="bar" style="margin-top:6px"><i style="width:${t.progress}%"></i></div>` : ''}
         <div class="meta"><span>${esc(deptName(t.deptId))}</span><span>${esc((agentOf(t.agentId) || {}).name || '')}</span></div>
         <div class="meta">${t.esc ? `<span style="color:var(--warn)">督办L${t.esc}</span>` : t.stuck ? '<span style="color:var(--bad)">卡点</span>' : '<span></span>'}${t.evals ? `<span style="color:${t.evals.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">评测 ${t.evals.total}</span>` : `<span>SLA ${Math.max(0, t.sla - t.age)}m</span>`}</div></div>`).join('')}</div>`; }).join('')}</div>`;
@@ -149,7 +152,7 @@
           ${rank.slice(0, 8).map((a, i) => evRow(a, i + 1)).join('')}<tr><td colspan="9" class="dim" style="text-align:center">· · ·</td></tr>${rank.slice(-2).map((a, i) => evRow(a, rank.length - 1 + i, true)).join('')}</table></div>
       </div>
       <div class="card mt"><div class="ct"><span class="h3">最近评测记录</span></div><table class="table"><tr><th>任务</th><th>执行 Agent</th>${EVAL_DIMS.map((d) => `<th>${d.name}</th>`).join('')}<th>总分</th><th>结论</th></tr>
-        ${done.slice(0, 10).map((t) => `<tr><td>${esc(t.title.slice(0, 20))}</td><td>${esc((agentOf(t.agentId) || {}).name || '')}</td>${EVAL_DIMS.map((d) => `<td>${t.evals.ev[d.k]}</td>`).join('')}<td><b>${t.evals.total}</b></td><td>${t.status === 'done' ? '<span class="tag ok">通过</span>' : t.status === 'review' ? '<span class="tag warn">人工复核</span>' : '<span class="tag bad">打回</span>'}</td></tr>`).join('')}</table></div>`;
+        ${[...done.filter((t) => t.real), ...done.filter((t) => !t.real)].slice(0, 12).map((t) => `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')"><td>${esc(t.title.slice(0, 20))}</td><td>${esc((agentOf(t.agentId) || {}).name || '')}</td>${EVAL_DIMS.map((d) => `<td>${t.evals.ev[d.k]}</td>`).join('')}<td><b>${t.evals.total}</b></td><td>${t.real ? '<span class="tag p">真实</span> ' : ''}${t.status === 'done' ? '<span class="tag ok">通过</span>' : t.status === 'review' ? '<span class="tag warn">人工复核</span>' : '<span class="tag bad">打回</span>'}</td></tr>`).join('')}</table></div>`;
     $('#run-patrol').onclick = () => { const o = S.sim.tasks.filter((t) => t.status !== 'done' && (t.age > t.sla * .8 || t.stuck)); o.forEach((t) => { t.esc = Math.min(3, t.esc + 1); }); simLog('cp', `🔎 老板手动发起巡检：${o.length} 项进入督办`, '#ffb547'); toast(`巡检完成：${o.length} 项进入督办`); evalPage(p); };
   }
   const evRow = (a, i, low) => `<tr ${low ? 'style="color:var(--bad)"' : ''}><td>${i}</td><td>${esc(a.name)}</td><td>${esc(deptName(a.deptId))}</td>${EVAL_DIMS.map((d) => `<td>${a.evals[d.k]}</td>`).join('')}<td><b>${agentTotal(a)}</b></td></tr>`;
@@ -163,7 +166,7 @@
     if (!studioState.title) { studioState.title = `${short}`; studioState.sub = `${S.industry?.div?.name || ''} · 更快交付 · 更稳品质`; }
     const C = S.sim.contents;
     p.innerHTML = hd('fa-clapperboard', 'AI 内容工厂', '任务完成 → 自动生成宣传海报 / 短视频 → 合规审校 → 老板审批 → 多渠道分发 → 回流线索')
-      + `<div class="poster-stage"><div class="canvas-box"><canvas id="pc" width="720" height="960"></canvas></div>
+      + `<div class="poster-stage"><div class="canvas-box">${studioState.type === 'video' && studioState.videoUrl ? `<video src="${studioState.videoUrl}" controls autoplay loop playsinline style="max-height:520px;max-width:100%;border-radius:8px"></video>` : '<canvas id="pc" width="720" height="960"></canvas>'}</div>
         <div class="col">
           <div class="card col">
             <div class="flex"><button class="btn btn-sm ${studioState.type === 'poster' ? 'btn-pri' : 'btn-ghost'}" data-t="poster"><i class="fas fa-image"></i>海报</button><button class="btn btn-sm ${studioState.type === 'video' ? 'btn-pri' : 'btn-ghost'}" data-t="video"><i class="fas fa-film"></i>短视频</button></div>
@@ -171,6 +174,8 @@
             <label class="hint">副标题 / 卖点</label><input id="s-sub" value="${esc(studioState.sub)}">
             <label class="hint">行动号召</label><input id="s-cta" value="${esc(studioState.cta)}">
             <div class="flex">${THEMES.map((t, i) => `<button data-th="${i}" style="width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,${t[1]},${t[2]});border:2px solid ${studioState.theme === i ? '#fff' : 'transparent'}"></button>`).join('')}<button class="btn btn-ghost btn-sm" id="ai-copy" style="margin-left:auto"><i class="fas fa-wand-magic-sparkles"></i>AI 文案</button></div>
+            ${window.AI && AI.on ? `<div class="flex"><button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="AI.posterBg()" ${AI.busy.img ? 'disabled' : ''}><i class="fas ${AI.busy.img ? 'fa-spinner fa-spin' : 'fa-image'}"></i>${AI.busy.img ? '生成中…' : 'AI 生成海报画面'}</button><button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="AI.promoVideo()" ${AI.busy.video ? 'disabled' : ''}><i class="fas ${AI.busy.video ? 'fa-spinner fa-spin' : 'fa-video'}"></i>${AI.busy.video ? '视频生成中…' : 'AI 生成宣传视频'}</button></div><div class="hint">Genspark 生成：海报画面约 19 积分 · 5秒视频约 110 积分</div>` : ''}
+            ${studioState.post ? `<div class="hint" style="line-height:1.6;color:var(--sub)"><b style="color:var(--txt)">推广文案：</b>${esc(studioState.post)}</div>` : ''}
             <div class="flex"><button class="btn btn-pri btn-sm" id="play" style="flex:1;justify-content:center"><i class="fas ${studioState.type === 'video' ? 'fa-play' : 'fa-rotate'}"></i>${studioState.type === 'video' ? '预览视频' : '重新生成'}</button><button class="btn btn-ghost btn-sm" id="dl"><i class="fas fa-download"></i>${studioState.type === 'video' ? '导出视频' : '下载PNG'}</button></div>
           </div>
           <div class="card col"><div class="h3">分发渠道</div>${['抖音', '视频号', '小红书', '公众号', 'B站', '微博', '企业官网', '私域社群'].map((c) => `<div class="chan ${studioState.channels.includes(c) ? 'on' : ''}" data-c="${c}"><i class="fas ${studioState.channels.includes(c) ? 'fa-square-check' : 'fa-square'}" style="color:var(--c1)"></i><span class="pb">${c}</span></div>`).join('')}
@@ -182,27 +187,33 @@
     $$('[data-th]', p).forEach((b) => b.onclick = () => { studioState.theme = +b.dataset.th; studio(p); });
     $$('.chan', p).forEach((b) => b.onclick = () => { const c = b.dataset.c; studioState.channels = studioState.channels.includes(c) ? studioState.channels.filter((x) => x !== c) : [...studioState.channels, c]; studio(p); });
     ['title', 'sub', 'cta'].forEach((k) => $('#s-' + k).oninput = (e) => { studioState[k] = e.target.value; drawPoster(1); });
-    $('#ai-copy').onclick = () => { const P = S.company.profile; studioState.title = pick([`${short} · 让${(S.industry?.div?.kw || '').split(' ')[0] || '生意'}更简单`, `选${short}，交付更安心`, `${short} 2026 全新升级`]); studioState.sub = P.canvas.价值主张.slice(0, 24); studioState.cta = pick(['立即咨询', '扫码领取方案', '预约免费诊断', '限时合作优惠']); studio(p); toast('AI 已生成合规文案（已过广告法审校）', 'fa-wand-magic-sparkles'); };
-    $('#play').onclick = () => studioState.type === 'video' ? playVideo() : drawPoster(1);
-    $('#dl').onclick = () => studioState.type === 'video' ? exportVideo() : (() => { const a = document.createElement('a'); a.download = `${short}_海报.png`; a.href = $('#pc').toDataURL('image/png'); a.click(); })();
-    $('#publish').onclick = () => { const b = deptByLib('brand') || deptByLib('marketing') || S.depts[0]; const c = { id: uid('c'), type: studioState.type, title: studioState.title + (studioState.type === 'video' ? '·短视频' : '·海报'), status: 'pending', channels: [...studioState.channels], views: 0, leads: 0, day: S.sim.day }; S.sim.contents.unshift(c); S.sim.metrics.contents++; addApproval('对外发布声明', b.id, `对外分发「${c.title}」至 ${c.channels.join('/')}`, 0, c.id); toast('已提交老板审批，审批通过后自动分发', 'fa-paper-plane'); studio(p); };
+    $('#ai-copy').onclick = () => { if (window.AI && AI.on) return AI.copy(p); const P = S.company.profile; studioState.title = pick([`${short} · 让${(S.industry?.div?.kw || '').split(' ')[0] || '生意'}更简单`, `选${short}，交付更安心`, `${short} 2026 全新升级`]); studioState.sub = P.canvas.价值主张.slice(0, 24); studioState.cta = pick(['立即咨询', '扫码领取方案', '预约免费诊断', '限时合作优惠']); studio(p); toast('AI 已生成合规文案（已过广告法审校）', 'fa-wand-magic-sparkles'); };
+    $('#play').onclick = () => studioState.type === 'video' ? (studioState.videoUrl ? (studioState.videoUrl = '', studio(p)) : playVideo()) : drawPoster(1);
+    $('#dl').onclick = () => studioState.type === 'video' ? (studioState.videoUrl ? (() => { const a = document.createElement('a'); a.href = studioState.videoUrl; a.download = `${short}_AI宣传视频.mp4`; a.click(); })() : exportVideo()) : (() => { const a = document.createElement('a'); a.download = `${short}_海报.png`; a.href = $('#pc').toDataURL('image/png'); a.click(); })();
+    $('#publish').onclick = () => { const b = deptByLib('brand') || deptByLib('marketing') || S.depts[0]; const c = { id: uid('c'), type: studioState.type, ai: !!(studioState.videoUrl || studioState.bgUrl), title: studioState.title + (studioState.type === 'video' ? '·短视频' : '·海报'), status: 'pending', channels: [...studioState.channels], views: 0, leads: 0, day: S.sim.day }; S.sim.contents.unshift(c); S.sim.metrics.contents++; addApproval('对外发布声明', b.id, `对外分发「${c.title}」至 ${c.channels.join('/')}`, 0, c.id); toast('已提交老板审批，审批通过后自动分发', 'fa-paper-plane'); studio(p); };
     drawPoster(1);
   }
+  window.drawPosterNow = () => drawPoster(1);
+  window.studioState = () => studioState;
   function drawPoster(t, ctx) {
     const cv = $('#pc'); if (!cv) return; ctx = ctx || cv.getContext('2d');
     const W = 720, H = 960, [bg, c1, c2] = THEMES[studioState.theme];
     const e = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    const im = window._posterBg; if (im && im.complete && im.naturalWidth) { const r = Math.max(W / im.naturalWidth, H / im.naturalHeight); const iw = im.naturalWidth * r, ih = im.naturalHeight * r; ctx.drawImage(im, (W - iw) / 2, (H - ih) / 2, iw, ih); const ov = ctx.createLinearGradient(0, 0, 0, H); ov.addColorStop(0, 'rgba(0,0,0,.25)'); ov.addColorStop(.55, 'rgba(0,0,0,.35)'); ov.addColorStop(1, 'rgba(0,0,0,.85)'); ctx.fillStyle = ov; ctx.fillRect(0, 0, W, H); }
     const g = ctx.createRadialGradient(W * .8, H * .2, 10, W * .8, H * .2, 600); g.addColorStop(0, c1 + '88'); g.addColorStop(1, 'transparent'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     const g2 = ctx.createRadialGradient(W * .1, H * .9, 10, W * .1, H * .9, 500); g2.addColorStop(0, c2 + '77'); g2.addColorStop(1, 'transparent'); ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
     ctx.strokeStyle = c1 + '22'; ctx.lineWidth = 1; for (let i = 0; i < W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); } for (let j = 0; j < H; j += 40) { ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(W, j); ctx.stroke(); }
-    // 中心图形
+    // 中心图形（有 AI 画面时不绘制）
     const a1 = e(t * 1.5);
+    if (!(window._posterBg && window._posterBg.naturalWidth)) {
     ctx.save(); ctx.translate(W / 2, 400); ctx.rotate((1 - a1) * -1.2);
     for (let r = 0; r < 4; r++) { ctx.beginPath(); ctx.strokeStyle = (r % 2 ? c2 : c1) + 'cc'; ctx.lineWidth = 3; ctx.arc(0, 0, (70 + r * 42) * a1, r * .8, r * .8 + Math.PI * 1.4); ctx.stroke(); }
     ctx.restore();
     ctx.beginPath(); ctx.fillStyle = c1; ctx.shadowColor = c1; ctx.shadowBlur = 40; ctx.arc(W / 2, 400, 54 * a1, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
     ctx.fillStyle = bg; ctx.font = `900 ${46 * a1 || 1}px "PingFang SC","Microsoft YaHei",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText((S.company.name || '企')[0], W / 2, 402);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     // 文字
     const a2 = e((t - .25) * 2), a3 = e((t - .45) * 2), a4 = e((t - .65) * 2.5);
     ctx.globalAlpha = a2; ctx.fillStyle = '#fff'; ctx.font = '900 62px "PingFang SC","Microsoft YaHei",sans-serif';
@@ -279,7 +290,7 @@
         <div class="card"><div class="ct"><span class="h3">Agent 编队</span></div><div class="grid2">${ag.filter((a) => !a.sub).map(agentCard).join('')}</div><div class="hint mt">另有 ${ag.filter((a) => a.sub).length} 个执行体负责批量低风险动作</div></div>
         <div class="card"><div class="ct"><span class="h3">员工</span></div>${st.map((s) => `<div class="flex" style="margin:8px 0;cursor:pointer" onclick="openStaffModal('${s.id}')"><div class="avatar" style="width:32px;height:32px;font-size:13px;background:${avColor(s.name)}">${esc(s.name[0])}</div><div style="flex:1"><b style="font-size:13px">${esc(s.name)}</b> <span class="dim" style="font-size:12px">${esc(s.pos)}</span></div><b class="grad-txt">${s.value}</b></div>`).join('')}</div>
       </div>`, (dr) => {
-      const go = (txt) => { if (!txt) return; createTask(id, txt, { core: true, kind: 'cmd' }); packet('boss', id, '派发', '#ffd54f'); toast(`已派发给 ${d.name}`); openDeptDrawer(id); };
+      const go = (txt) => { if (!txt) return; createTask(id, txt, { core: true, kind: 'cmd', real: true, deliverable: '可直接使用的工作成果' }); packet('boss', id, '派发', '#ffd54f'); toast(`已派发给 ${d.name}`); openDeptDrawer(id); };
       $('#dt-go', dr).onclick = () => go($('#dt-in', dr).value.trim());
       $$('[data-dt]', dr).forEach((b) => b.onclick = () => go(b.dataset.dt));
     });

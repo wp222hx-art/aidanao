@@ -342,3 +342,23 @@ input:focus,textarea:focus,select:focus{border-color:var(--c1);box-shadow:0 0 0 
 .planet.rank1:after{content:"TOP1";background:var(--c1);color:#051026}
 .planet.rank2:after{content:"TOP2";background:rgba(139,92,255,.85);color:#fff}
 .planet.rank3:after{content:"TOP3";background:rgba(143,163,200,.6);color:#fff}
+
+/* Genspark 接入 */
+.ai-pill{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;font-size:12px;border:1px solid var(--line2);background:rgba(10,20,48,.7);white-space:nowrap;margin-left:auto;margin-right:10px}
+.hq-top .ai-pill{margin-left:auto;margin-right:0}
+.hq-top .kpis{margin-left:10px}
+.ai-pill .pulse{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.ai-pill.on{border-color:rgba(61,220,151,.5);background:rgba(61,220,151,.08)}
+.ai-pill.on .pulse{background:var(--ok);box-shadow:0 0 0 0 rgba(61,220,151,.6);animation:blip 1.8s infinite}
+.ai-pill.on b{color:var(--ok)}
+.ai-pill.off b{color:var(--warn)}
+.wiz-top .ai-pill{margin-left:auto}
+.wiz-top .steps{margin-left:auto}
+.lnk{color:var(--c1);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.md{font-size:13px;line-height:1.75;color:var(--txt)}
+.md p{margin:4px 0}.md ul,.md ol{padding-left:20px;margin:4px 0}.md li{margin:2px 0}
+.md h3,.md h4,.md h5,.md h6{margin:10px 0 4px;font-size:14px;color:var(--c1)}
+.md code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;font-size:12px}
+.md a{color:var(--c1);word-break:break-all}
+.md-row{display:flex;gap:8px;font-size:12px;border-bottom:1px dashed var(--line);padding:4px 0}.md-row span{flex:1}
+.modal{width:900px}

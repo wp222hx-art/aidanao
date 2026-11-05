@@ -39,9 +39,32 @@
 
 ## 六、下一步建议
 1. 接入 D1 实现多企业、多账号持久化
-2. 接入大模型 API（服务端密钥）实现真实诊断、文案与 Agent 推理
 3. 对接招投标/工商授权数据源、企业微信/飞书消息督办
 4. 视频生成接入专业模型，分发对接各平台开放接口
+
+## 七、Genspark 真实能力接入（企业主本人授权）
+后端 `src/ai.ts` 以与 `gsk` CLI 相同的协议调用 Genspark（`/api/tool_cli/<tool>` + `/api/llm_proxy/v1`），密钥只存在服务端：
+- 本地：`.dev.vars` 中的 `GSK_API_KEY`（已 gitignore）
+- 生产：`wrangler pages secret put GSK_API_KEY`；可选 `BRAIN_ACCESS_CODE`（访问口令，防止他人消耗积分）、`AI_MODEL`（默认 gpt-5-mini）
+
+| 接口 | 能力 | 用到的 Genspark 工具 |
+|---|---|---|
+| `GET /api/ai/status` | 授权状态、套餐、积分 | me |
+| `POST /api/ai/classify` | 企业名称 → 全网检索 → AI 归入 97 个国标大类（TOP3+依据） | batch_web_search + LLM |
+| `POST /api/ai/profile` | 深度画像：定位/价值链/七域诊断/画布/机会/风险/竞品/找单关键词/推荐部门 | batch_web_search + LLM |
+| `POST /api/ai/leads` | 商机雷达：全网检索采购/招标 → AI 分级 A/B/C、采购方、下一步 | web_search + LLM |
+| `POST /api/ai/command` | 老板指令 → 可验收的部门任务（标记高风险需审批） | LLM |
+| `POST /api/ai/execute` | Agent 真实执行（必要时先检索）+ 独立 AI 质检官五维评测 | web_search + LLM×2 |
+| `POST /api/ai/evaluate` | 单独评测 | LLM |
+| `POST /api/ai/resume` | 简历解析：工龄/技能/价值分/定位/优势/短板/搭档 Agent | LLM |
+| `POST /api/ai/brief` | AI 经营日报 | LLM |
+| `POST /api/ai/copy` | 合规营销文案 + 画面/视频提示词 | LLM |
+| `POST /api/ai/image` / `video` | 海报画面 / 5 秒宣传视频 | image_generation / video_generation |
+| `POST /api/ai/agent` + `GET /agent/status` | 交给 Genspark 超级智能体深度执行（异步） | create_task / task_status / task_info |
+| `GET /api/ai/file` | Genspark 文件代理（换取临时地址） | file/download |
+
+运行规则：评测 ≥80 通过；<80 带评审意见自动返工一次；仍不达标转人工复核；老板可人工通过 / 写意见打回 / 升级超级智能体。
+真实任务并发 2 个；商机雷达每个仿真日自动 1 次且真实间隔 ≥8 分钟；视频/超级智能体需二次确认。未连接时自动回退仿真模式。
 
 ## 技术栈
 Hono + Cloudflare Pages + 原生 JS/SVG/Canvas（无前端框架） · 更新：2026-11-05

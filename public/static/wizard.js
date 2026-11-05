@@ -105,8 +105,10 @@
     res.innerHTML = `<div class="ident-log" id="ident-log"></div>`;
     const L = (t) => { const el = $('#ident-log'); if (el) el.innerHTML = `<span><i class="fas fa-angle-right"></i> ${t}</span>`; };
     $('#core .inner').innerHTML = `<div><i class="fas fa-satellite-dish fa-beat" style="font-size:22px;color:var(--c1)"></i><div style="margin-top:4px;font-size:12px">${esc(name.slice(0, 8))}<br>检索中</div></div>`;
-    L(`锁定企业「${esc(name)}」，正在检索维基百科、公开资讯、主营业务…`);
+    const useAI = window.AI && AI.on;
+    L(useAI ? `锁定企业「${esc(name)}」，调用 Genspark 全网检索企业简介、主营业务、经营范围…` : `锁定企业「${esc(name)}」，正在检索维基百科、公开资讯、主营业务…`);
     const req = fetch(`/api/scan?name=${encodeURIComponent(name)}`).then((r) => r.json()).catch(() => null);
+    const aiReq = useAI ? AI.call('/classify', { name }).catch((e) => ({ error: e.message })) : Promise.resolve(null);
     // 遍历行业星球动画
     const planets = $$('.planet');
     planets.forEach((p) => p.classList.remove('sel', 'dimmed', 'rank1', 'rank2', 'rank3'));
@@ -117,9 +119,17 @@
       planets[i].classList.remove('probe');
     }
     const scan = await req;
-    L('提取企业主营业务关键词，匹配 97 个行业大类…');
-    await sleep(300);
-    const r = classifyCompany(name, scan);
+    L(useAI ? 'Genspark AI 正在阅读检索证据，判断主营业务并归入 97 个国标大类…' : '提取企业主营业务关键词，匹配 97 个行业大类…');
+    const air = await aiReq;
+    let r;
+    if (air && !air.error && air.cands?.length) {
+      r = { name, ai: true, business: air.business, sources: [`Genspark 全网检索（${Math.round((air.evidenceChars || 0) / 100) / 10}k 字证据）`, 'AI 归类'], summary: air.business,
+        cands: air.cands.map((c) => ({ code: c.code, indName: c.indName, div: c.div, divName: c.divName, conf: c.conf, hits: [...(air.keywords || []).slice(0, 6), c.reason].filter(Boolean), reason: c.reason })) };
+      if (!air.found) r.sources.push('⚠ 未检索到该企业的确切资料，结果为名称推断');
+    } else {
+      if (air?.error) toast('AI 归类失败，已改用本地规则：' + air.error, 'fa-triangle-exclamation');
+      await sleep(200); r = classifyCompany(name, scan);
+    }
     S.company.name = name;
     S.company.scan = scan || { news: [], wiki: null };
     S.company.profile = null;
@@ -131,8 +141,10 @@
       saveState(); updateNext(); return;
     }
     applyCandidate(r.cands[0], true);
+    if (r.business && S.company.profile) S.company.profile.business = r.business;
     renderIdent(r);
-    toast(`已自动归类：${r.cands[0].indName} › ${r.cands[0].divName}`, 'fa-location-crosshairs');
+    toast(`${r.ai ? 'Genspark AI ' : ''}已自动归类：${r.cands[0].indName} › ${r.cands[0].divName}`, 'fa-location-crosshairs');
+    if (r.ai) { saveState(); AI.enrichProfile().then(() => { updateNext(); toast('企业深度画像已生成（第 2 步可查看）', 'fa-brain'); }).catch(() => { }); }
   }
 
   function applyCandidate(c, silent) {
@@ -140,7 +152,9 @@
     const d = ind.divisions.find((x) => x[0] === c.div);
     selectCat(ind);
     S.industry.div = { code: d[0], name: d[1], kw: d[2] };
-    S.company.profile = S.company.scan && S.company.name ? buildProfile(S.company.scan) : null;
+    const keep = S.company.profile?.ai ? S.company.profile : null;
+    S.company.profile = S.company.scan && S.company.name ? (keep || buildProfile(S.company.scan)) : null;
+    if (S.company.profile && S.ident?.business) S.company.profile.business = S.company.profile.business || S.ident.business;
     S.depts = [];
     renderDivs(ind);
     saveState(); updateNext();
@@ -155,7 +169,7 @@
     const cur = S.industry?.div?.code;
     res.innerHTML = `
       <div class="ident-cands">
-        <span class="dim" style="font-size:12px;white-space:nowrap"><i class="fas fa-ranking-star"></i> 归类结果</span>
+        <span class="dim" style="font-size:12px;white-space:nowrap"><i class="fas fa-ranking-star"></i> 归类结果${r.ai ? ' <span class="tag ok" style="font-size:10px">Genspark AI</span>' : ''}</span>
         ${r.cands.slice(0, 3).map((c, i) => `<button class="cand ${cur === c.div ? 'on' : ''}" data-i="${i}">
           <span class="rk">${i + 1}</span>
           <span class="cn"><b>${c.code}${c.div} ${esc(c.divName)}</b><small>${esc(c.indName)}</small></span>
@@ -284,7 +298,7 @@
     let scan = null;
     const p = fetch(`/api/scan?name=${encodeURIComponent(name)}&industry=${encodeURIComponent(S.industry?.div?.name || '')}`).then((r) => r.json()).catch(() => null);
     const nodes = $$('.src-node');
-    for (let i = 2; i < nodes.length; i++) { await sleep(320); nodes[i].classList.add('hit'); L(`${SOURCES[i].n}：行业知识库推断完成（需后续授权接入真实数据）`); }
+    for (let i = 2; i < nodes.length; i++) { await sleep(320); nodes[i].classList.add('hit'); L(window.AI && AI.on ? `${SOURCES[i].n}：交由 Genspark 全网检索` : `${SOURCES[i].n}：行业知识库推断完成（需后续授权接入真实数据）`); }
     scan = await p;
     nodes[0].classList.add(scan?.wiki ? 'hit' : 'miss'); nodes[1].classList.add(scan?.news?.length ? 'hit' : 'miss');
     L(`维基百科：${scan?.wiki ? '命中词条「' + scan.wiki.title + '」' : '未命中'}`);
@@ -292,6 +306,13 @@
     await sleep(400); L('构建企业价值链与商业模式画布…'); await sleep(500); L('执行七域经营诊断…'); await sleep(500);
     S.company.scan = scan || { news: [], wiki: null };
     S.company.profile = buildProfile(S.company.scan);
+    if (window.AI && AI.on) {
+      L('<span style="color:#b69bff">调用 Genspark：全网检索企业简介、客户、竞争对手、最新动态…</span>');
+      const tick = setInterval(() => L(pick(['AI 阅读检索证据…', 'AI 构建价值链…', 'AI 填写商业模式画布…', 'AI 评估七域经营健康度…', 'AI 挖掘生意机会与风险…', 'AI 生成找订单检索词…'])), 1800);
+      try { await AI.enrichProfile(); L('<span style="color:var(--ok)">Genspark 深度画像完成</span>'); }
+      catch (e) { L(`<span style="color:var(--warn)">AI 画像失败（${esc(e.message)}），已使用行业推断画像</span>`); }
+      clearInterval(tick);
+    }
     L(`<span style="color:var(--ok)">完成！画像置信度 ${S.company.profile.confidence}%</span>`);
     $('#radar').classList.remove('on'); $('#btn-scan').disabled = false;
     S.depts = []; saveState(); renderReport(); updateNext();
@@ -301,25 +322,29 @@
   function renderReport() {
     const P = S.company.profile, sc = S.company.scan || {};
     $('#report').innerHTML = `
-      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-building" style="color:var(--c1)"></i> ${esc(S.company.name)}</span><span class="tag ${P.confidence > 60 ? 'ok' : 'warn'}">置信度 ${P.confidence}%</span></div>
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-building" style="color:var(--c1)"></i> ${esc(S.company.name)}</span><span class="flex">${P.ai ? '<span class="tag ok"><i class="fas fa-brain"></i> Genspark 深度画像</span>' : '<span class="tag warn">行业推断</span>'}<span class="tag ${P.confidence > 60 ? 'ok' : 'warn'}">置信度 ${P.confidence}%</span></span></div>
+        ${P.business ? `<p style="font-size:13px;margin-bottom:6px"><b>主营：</b>${esc(P.business)}</p>` : ''}
         <p style="line-height:1.7">${esc(P.positioning)}</p>
         ${sc.wiki ? `<p class="muted mt" style="font-size:12px;line-height:1.7">${esc(sc.wiki.extract.slice(0, 260))}… <a href="${sc.wiki.url}" target="_blank" style="color:var(--c1)">维基来源</a></p>` : '<p class="hint mt">未检索到百科词条，以下画像以行业知识推断为主，建议上传企业介绍/官网链接提高精度。</p>'}
       </div>
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-link" style="color:var(--c2)"></i> 企业价值链</span></div>
         <div class="vchain">${P.chain.map((c, i) => `${i ? '<i class="fas fa-angle-right ar"></i>' : ''}<span class="v">${c}</span>`).join('')}</div></div>
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-heart-pulse" style="color:var(--c3)"></i> 七域经营诊断（初判）</span></div>
-        ${P.domains.map((d) => `<div class="flex" style="margin:6px 0"><span style="width:70px;font-size:12px">${d.name}</span><div class="bar" style="flex:1"><i style="width:${d.score}%;${d.score < 60 ? 'background:linear-gradient(90deg,#ff5d6c,#ffb547)' : ''}"></i></div><b style="width:30px;text-align:right;font-size:12px">${d.score}</b></div>`).join('')}
+        ${P.domains.map((d) => `<div class="flex" style="margin:6px 0" title="${esc(d.note || '')}"><span style="width:70px;font-size:12px">${d.name}</span><div class="bar" style="flex:1"><i style="width:${d.score}%;${d.score < 60 ? 'background:linear-gradient(90deg,#ff5d6c,#ffb547)' : ''}"></i></div><b style="width:30px;text-align:right;font-size:12px">${d.score}</b></div>`).join('')}
         <p class="hint mt">短板：${P.weakest.map((w) => w.name).join('、')} —— 将作为首批增长项目候选。</p></div>
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-table-cells" style="color:var(--warn)"></i> 商业模式画布（精简）</span></div>
         <div class="grid2" style="gap:8px">${Object.entries(P.canvas).map(([k, v]) => `<div style="padding:8px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid var(--line)"><div class="dim" style="font-size:11px">${k}</div><div style="font-size:12px;margin-top:3px">${esc(v)}</div></div>`).join('')}</div></div>
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-lightbulb" style="color:var(--ok)"></i> 生意机会</span></div>${P.opportunities.map((o) => `<div class="flex" style="align-items:flex-start;margin:6px 0;font-size:13px"><i class="fas fa-circle-check" style="color:var(--ok);margin-top:3px"></i>${esc(o)}</div>`).join('')}
-        <div class="hint mt">${P.risks.map((r) => '⚠ ' + r).join('<br>')}</div></div>
+        <div class="hint mt">${P.risks.map((r) => '⚠ ' + esc(r)).join('<br>')}</div>
+        ${P.competitors?.length ? `<div class="mt" style="font-size:12px"><span class="dim">主要竞争对手：</span>${P.competitors.map((c) => `<span class="tag p">${esc(c)}</span>`).join(' ')}</div>` : ''}
+        ${P.leadKeywords?.length ? `<div class="mt" style="font-size:12px"><span class="dim">商机雷达检索词：</span>${P.leadKeywords.map((c) => `<span class="tag">${esc(c)}</span>`).join(' ')}</div>` : ''}</div>
       ${sc.news?.length ? `<div class="card"><div class="ct"><span class="h3"><i class="fas fa-newspaper"></i> 公开资讯证据（${sc.news.length}）</span></div>${sc.news.map((n) => `<div class="news-item"><a href="${esc(n.link)}" target="_blank">${esc(n.title)}</a><p>${esc(n.desc)}</p><span class="dim" style="font-size:11px">${esc(n.source)}</span></div>`).join('')}</div>` : ''}`;
   }
 
   // ---------- STEP 3 部署布局 ----------
   function autoLayout() {
-    const ids = [...new Set([...INDUSTRY_DEPTS.base, ...(INDUSTRY_DEPTS[S.industry?.code] || [])])];
+    const rec = (S.company.profile?.recommendedDepts || []).filter((id) => deptLib(id));
+    const ids = rec.length >= 4 ? [...new Set(['strategy', 'sales', 'finance', ...rec])].slice(0, 16) : [...new Set([...INDUSTRY_DEPTS.base, ...(INDUSTRY_DEPTS[S.industry?.code] || [])])];
     S.depts = ids.map((id) => { const l = deptLib(id); return { id: uid('d'), lib: id, name: l.name, icon: l.icon, color: l.color }; });
     arrange();
   }
@@ -332,7 +357,7 @@
     body.innerHTML = `
     <section class="stage layout-wrap">
       <aside class="palette">
-        <div class="h3">部门模块库</div><div class="hint">点击或拖拽到画布添加；AI 已按「${esc(S.industry?.div?.name || '')}」推荐初始布局。</div>
+        <div class="h3">部门模块库</div><div class="hint">点击或拖拽到画布添加；${S.company.profile?.recommendedDepts?.length ? '<b style="color:var(--ok)">Genspark AI</b> 已根据企业画像' : 'AI 已按「' + esc(S.industry?.div?.name || '') + '」'}推荐初始布局。</div>
         <div class="pal-list" id="pal-list"></div>
         <div class="flex"><input id="custom-dept" placeholder="自定义部门名称" style="flex:1;min-width:0"><button class="btn btn-ghost btn-sm" id="add-custom"><i class="fas fa-plus"></i></button></div>
       </aside>
@@ -424,7 +449,11 @@
   }
   function addStaff(p) {
     const s = { id: uid('p'), deptId: curDept, ...p }; s.value = scoreStaff(s);
-    S.staff.push(s); saveState(); renderStaff(); toast(`${s.name} 已入职 · 价值评分 ${s.value}`, 'fa-user-check');
+    S.staff.push(s); saveState(); renderStaff();
+    if (window.AI && AI.on && (s.resume || '').length >= 10) {
+      toast(`${s.name} 已入职，Genspark 正在解析简历…`, 'fa-user-check');
+      AI.resume(s).then(() => { if ($('#staff-grid')) renderStaff(); toast(`AI 评估完成：${s.name} · ${s.aiRole || ''} · ${s.value} 分`, 'fa-brain'); });
+    } else toast(`${s.name} 已入职 · 价值评分 ${s.value}`, 'fa-user-check');
   }
   window.genFor = function (deptId, n) {
     const d = S.depts.find((x) => x.id === deptId); const l = deptLib(d.lib);
@@ -445,7 +474,8 @@
     $('#form-title').innerHTML = `录入员工 · <span style="color:${d?.color}">${esc(d?.name || '')}</span>`;
     const list = S.staff.filter((s) => s.deptId === curDept);
     $('#staff-grid').innerHTML = list.length ? list.map((p) => `<div class="person"><div class="top"><div class="avatar" style="background:${avColor(p.name)}">${esc(p.name[0])}</div><div><b>${esc(p.name)}</b><div class="dim" style="font-size:12px">${esc(p.pos)} · ${p.years}年</div></div></div>
-      <div class="val"><div class="dim" style="font-size:10px">价值评分</div><b class="grad-txt">${p.value}</b></div>
+      <div class="val"><div class="dim" style="font-size:10px">${p.aiPending ? '<i class="fas fa-spinner fa-spin"></i> AI评估中' : p.ai ? 'AI 评分' : '价值评分'}</div><b class="grad-txt">${p.value}</b></div>
+      ${p.ai ? `<div style="font-size:11px;margin-top:8px;line-height:1.6"><span class="tag ok">${esc(p.aiRole || '')}</span> <span class="muted">优势：${esc(p.strengths || '')}</span><br><span class="dim">待提升：${esc(p.gaps || '')} · 搭档：${esc(p.pairAgent || '')}</span></div>` : ''}
       <div class="bar mt"><i style="width:${p.value}%"></i></div>
       <div class="sk">${p.skills.map((s) => `<span class="tag">${s}</span>`).join('') || '<span class="dim" style="font-size:12px">暂无技能标签</span>'}</div>
       <p class="dim" style="font-size:11px;margin-top:8px;line-height:1.5;max-height:34px;overflow:hidden">${esc(p.resume)}</p>

@@ -41,10 +41,12 @@
     const ag = (opt.core ? pick(core.length ? core : pool) : pick(pool.filter((a) => a.status !== 'busy').length ? pool.filter((a) => a.status !== 'busy') : pool));
     const staff = S.staff.filter((s) => s.deptId === deptId);
     const t = { id: uid('t'), deptId, title, agentId: ag?.id, ownerId: staff.length ? pick(staff).id : null, status: 'todo', progress: 0, sla: rand(90, 300), age: 0,
-      from: opt.from || null, kind: opt.kind || null, ref: opt.ref || null, day: S.sim.day, esc: 0, stuck: false, evals: null, rework: 0 };
+      from: opt.from || null, kind: opt.kind || null, ref: opt.ref || null, day: S.sim.day, esc: 0, stuck: false, evals: null, rework: 0,
+      real: !!(opt.real && window.AI && AI.on), deliverable: opt.deliverable || '', needApproval: !!opt.needApproval, output: null, history: [] };
+    if (t.real) t.sla = opt.sla || 240;
     S.sim.tasks.unshift(t);
     if (S.sim.tasks.length > 220) S.sim.tasks = S.sim.tasks.filter((x, i) => i < 160 || x.status !== 'done');
-    if (!opt.silent) log('task', `<b>${esc(d.name)}</b> 新任务「${esc(title)}」→ ${esc(ag?.name || '')}`, d.color);
+    if (!opt.silent) log('task', `<b>${esc(d.name)}</b> 新任务「${esc(title)}」→ ${esc(ag?.name || '')}${t.real ? ' <span class="tag ok" style="font-size:10px">真实AI执行</span>' : ''}`, d.color);
     return t;
   };
 
@@ -56,12 +58,14 @@
     return { ev, total };
   }
 
+  window.completeTask = (t) => completeTask(t);
   function completeTask(t) {
     const d = deptOf(t.deptId), a = agentOf(t.agentId), lib = d?.lib;
     t.status = 'done'; S.sim.metrics.done++; S.sim.today.done++;
     const hrs = rand(1, 4); S.sim.metrics.hours += hrs; S.sim.today.hours += hrs;
     if (a) { a.done++; a.status = 'idle'; EVAL_DIMS.forEach((k) => a.evals[k.k] = Math.round(a.evals[k.k] * .9 + t.evals.ev[k.k] * .1)); }
-    log('done', `✅ <b>${esc(a?.name || '')}</b> 完成「${esc(t.title)}」· 评测 ${t.evals.total} 分 · 节省 ${hrs}h`, '#3ddc97');
+    log('done', `✅ <b>${esc(a?.name || '')}</b> 完成「${esc(t.title)}」· 评测 ${t.evals.total} 分${t.real ? ` · <a class="lnk" onclick="openTaskModal('${t.id}')">查看AI成果</a>` : ` · 节省 ${hrs}h${window.AI && AI.on ? ' <span class="dim">（仿真）</span>' : ''}`}`, '#3ddc97');
+    if (t.real) { S.sim.real = S.sim.real || { done: 0, rework: 0, review: 0, leads: 0 }; S.sim.real.done++; if (t.needApproval) addApproval('高风险动作', t.deptId, `「${t.title}」成果已产出，执行前需老板确认`, 0, t.id); }
     bubble(t.agentId, `完成 ✓ ${t.evals.total}分`, 'ai');
     // 跨部门联动
     if (lib === 'sales' && /线索|订单/.test(t.title)) findLead(true);
@@ -73,6 +77,7 @@
   }
 
   function findLead(fromTask) {
+    if (window.AI && AI.on) return;
     const sales = deptByLib('sales'); if (!sales) return;
     let L;
     const real = S.sim.realLeads.shift();
@@ -99,10 +104,10 @@
     const targets = ['product', 'production', 'rnd', 'project', 'design', 'service'].map(deptByLib).filter(Boolean).slice(0, 2);
     targets.forEach((td) => {
       const title = { product: '评估订单的定制需求', production: '根据新订单重排产计划', rnd: '评审技术可行性', project: '评估项目实施方案', design: '生成初版设计方案', service: '制定客户交付服务计划' }[td.lib];
-      createTask(td.id, `${title}（${L.title.slice(0, 12)}…）`, { from: sales?.id, kind: 'lead', ref: L.id, core: true });
+      createTask(td.id, `${title}（${L.title.slice(0, 12)}…）`, { from: sales?.id, kind: 'lead', ref: L.id, core: true, real: L.real, deliverable: '针对该商机的评估结论与行动建议' });
       if (sales) packet(sales.id, td.id, '订单同步', '#3ddc97');
     });
-    if (sales) createTask(sales.id, `生成报价依据单（${L.title.slice(0, 10)}…）`, { kind: 'lead', ref: L.id, core: true });
+    if (sales) createTask(sales.id, `生成跟进方案与报价依据（${L.title.slice(0, 10)}…）`, { kind: 'lead', ref: L.id, core: true, real: L.real, deliverable: `跟进话术、报价依据与下一步动作。商机信息：${L.title}；${L.desc || ''}；来源 ${L.link || ''}` });
     addApproval('调整报价/签约', sales?.id, `${L.grade}级商机「${L.title.slice(0, 22)}」报价方案待老板确认`, L.value, L.id);
     log('sync', `🔗 ${auto ? '自动' : '手动'}同步商机到 ${targets.map((t) => t.name).join('、') || '相关部门'}，已生成报价审批`, '#8b5cff');
   };
@@ -123,6 +128,7 @@
     if (ap.deptId) packet('boss', ap.deptId, ok ? '已批准' : '已驳回', ok ? '#3ddc97' : '#ff5d6c');
     if (ok && ap.ref) {
       const L = S.sim.leads.find((l) => l.id === ap.ref); if (L) { L.status = 'quoted'; setTimeout(() => { if (Math.random() < .55) { L.status = 'won'; S.sim.metrics.revenue += L.value; log('value', `🏆 赢单！「${esc(L.title.slice(0, 24))}」成交 ¥${fmtMoney(L.value)}`, '#ffca28'); } }, rand(8000, 20000)); }
+      const RT = S.sim.tasks.find((x) => x.id === ap.ref); if (RT) log('approval', `▶ 老板确认执行「${esc(RT.title.slice(0, 24))}」`, '#3ddc97');
       const C = S.sim.contents.find((c) => c.id === ap.ref); if (C) { C.status = 'live'; log('content', `📣 「${esc(C.title)}」开始多渠道分发`, '#ff4fa3'); }
     }
     if (ok && ap.action === '追加广告预算') S.sim.metrics.pipeline += Math.round(ap.amount * rand(2, 5));
@@ -191,6 +197,7 @@
       sim.tasks.forEach((t) => {
         if (t.status === 'done') return;
         t.age += step;
+        if (t.real) return;
         if (t.status === 'todo' && Math.random() < .35) { t.status = 'doing'; const a = agentOf(t.agentId); if (a) a.status = 'busy'; }
         else if (t.status === 'doing' || t.status === 'rework') {
           if (!t.stuck && Math.random() < .012) { t.stuck = true; bubble(t.agentId, '缺数据，卡住了…', 'warn'); }
@@ -206,7 +213,7 @@
       // 随机产生新任务
       if (Math.random() < .25) { const d = pick(S.depts); const l = deptLib(d.lib); createTask(d.id, l ? pick(l.tasks) : pick(['整理部门周报', '跟进客户反馈', '优化工作流程'])); }
       if (Math.random() < .07) findLead();
-      if (Math.random() < .03 && S.sim.realLeads.length < 3) fetchRealLeads();
+      if (!(window.AI && AI.on) && Math.random() < .03 && S.sim.realLeads.length < 3) fetchRealLeads();
       // 已分发内容增长
       sim.contents.forEach((c) => { if (c.status === 'live') { const v = rand(20, 400); c.views += v; sim.metrics.views += v; if (Math.random() < .04) { c.leads++; findLead(); } } });
     }
@@ -277,9 +284,9 @@
     $$('.nav-btn[data-k]').forEach((b) => b.onclick = () => { view = b.dataset.k; $$('.nav-btn').forEach((x) => x.classList.toggle('on', x === b)); mountView(); });
     $$('#speed button').forEach((b) => b.onclick = () => { S.sim.speed = +b.dataset.v; $$('#speed button').forEach((x) => x.classList.toggle('on', x === b)); saveState(); });
     $('#nav-reset').onclick = () => { if (confirm('确定重新创建企业？当前企业数据将清空。')) { stopSim(); resetState(); renderApp(); } };
-    $('#cmd-go').onclick = () => bossCommand($('#cmd').value);
-    $('#cmd').onkeydown = (e) => e.key === 'Enter' && bossCommand($('#cmd').value);
-    $$('[data-q]').forEach((b) => b.onclick = () => bossCommand(b.dataset.q));
+    $('#cmd-go').onclick = () => window.bossCommand($('#cmd').value);
+    $('#cmd').onkeydown = (e) => e.key === 'Enter' && window.bossCommand($('#cmd').value);
+    $$('[data-q]').forEach((b) => b.onclick = () => window.bossCommand(b.dataset.q));
     S.sim.feed.slice(0, 40).reverse().forEach(renderFeedItem);
     mountView(); renderTick(); updateBadges();
     stopSim(); timer = setInterval(tick, 1000);
