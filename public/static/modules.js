@@ -5,18 +5,18 @@
   const deptName = (id) => (S.depts.find((d) => d.id === id) || {}).name || '—';
   const deptColor = (id) => (S.depts.find((d) => d.id === id) || {}).color || '#888';
   const lvColor = (lv) => (AUTONOMY.find((a) => a.lv === lv) || {}).color;
-  const stMap = { todo: ['待办', 'p'], doing: ['执行中', ''], rework: ['返工', 'warn'], review: ['人工复核', 'warn'], done: ['完成', 'ok'] };
+  const stMap = new Proxy({}, { get: (_, k) => (window.TASK_ST || {})[k] || ['—', 'p'] });
 
   window.renderModule = function (k, main) {
-    const fn = { cockpit, leads, agents, tasks, eval: evalPage, studio, approve, ledger, org }[k];
+    const fn = { cockpit, leads, agents, mech, studio, approve, ledger, org }[k] || cockpit;
     main.innerHTML = `<section class="page" id="page"></section>`;
     fn($('#page'), true);
   };
   window.moduleTick = function (k) {
     tickN++;
     const page = $('#page'); if (!page) return;
-    const live = { cockpit: 3, tasks: 2, eval: 3, ledger: 3, approve: 4, agents: 4 };
-    if (live[k] && tickN % live[k] === 0) { const st = page.scrollTop; ({ cockpit, tasks, eval: evalPage, ledger, approve, agents })[k](page); page.scrollTop = st; }
+    const live = { cockpit: 4, mech: 3, ledger: 4, approve: 3, agents: 4 };
+    if (live[k] && tickN % live[k] === 0) { if (document.activeElement?.closest?.('#page') && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return; const st = page.scrollTop; ({ cockpit, mech, ledger, approve, agents })[k](page); page.scrollTop = st; }
     if (k === 'leads' && tickN % 2 === 0) renderLeadList();
   };
 
@@ -39,7 +39,7 @@
       <div class="card mt" id="brief-card"><div class="ct"><span class="h3"><i class="fas fa-file-lines" style="color:var(--c1)"></i> AI 经营日报</span><button class="btn btn-ghost btn-sm" onclick="AI.brief()" ${window.AI && AI.on ? '' : 'disabled title="需连接 Genspark"'}><i class="fas fa-wand-magic-sparkles"></i>${AI && AI.briefing ? '生成中…' : '生成今日日报'}</button></div>
         ${S.sim.brief ? `<div class="md">${mdRender(S.sim.brief.text)}</div><div class="hint mt">第 ${S.sim.brief.day} 天 ${S.sim.brief.t} 生成 · Genspark AI · 基于平台运行数据</div>` : '<div class="hint">点击生成：AI 汇总今日任务、商机、评测、督办与审批数据，写成老板简报。</div>'}</div>
       <div class="card mt"><div class="ct"><span class="h3">部门运转矩阵</span><span class="dim" style="font-size:11px">点击部门查看详情</span></div>
-        <div class="grid4">${S.depts.map((d) => { const open = S.sim.tasks.filter((t) => t.deptId === d.id && t.status !== 'done'); const done = S.sim.tasks.filter((t) => t.deptId === d.id && t.status === 'done').length; const warn = open.filter((t) => t.esc > 0).length; return `<div class="stat" style="cursor:pointer;border-left:3px solid ${d.color}" onclick="openDeptDrawer('${d.id}')"><div class="flex between"><b style="font-size:13px"><i class="fas ${d.icon}" style="color:${d.color}"></i> ${esc(d.name)}</b>${warn ? `<span class="tag warn">督办${warn}</span>` : '<span class="tag ok">正常</span>'}</div><div class="flex between mt" style="font-size:12px"><span class="muted">在办 ${open.length}</span><span class="muted">完成 ${done}</span><span class="muted">${S.agents.filter((a) => a.deptId === d.id).length} AI</span></div></div>`; }).join('')}</div></div>`;
+        <div class="grid4">${S.depts.map((d) => { const open = S.sim.tasks.filter((t) => t.deptId === d.id && !['done', 'rejected'].includes(t.status)); const done = S.sim.tasks.filter((t) => t.deptId === d.id && t.status === 'done').length; const warn = open.filter((t) => t.esc > 0).length; return `<div class="stat" style="cursor:pointer;border-left:3px solid ${d.color}" onclick="openDeptDrawer('${d.id}')"><div class="flex between"><b style="font-size:13px"><i class="fas ${d.icon}" style="color:${d.color}"></i> ${esc(d.name)}</b>${warn ? `<span class="tag warn">督办${warn}</span>` : open.length ? '<span class="tag">运转中</span>' : '<span class="tag p">待命</span>'}</div><div class="flex between mt" style="font-size:12px"><span class="muted">在办 ${open.length}</span><span class="muted">完成 ${done}</span><span class="muted">${S.agents.filter((a) => a.deptId === d.id).length} AI</span></div></div>`; }).join('')}</div></div>`;
   }
   function radarSvg(domains) {
     const n = domains.length, R = 110, cx = 150, cy = 135;
@@ -61,102 +61,116 @@
   // ---------------- 商机雷达 ----------------
   function leads(p) {
     const kw = (S.industry?.div?.kw || '').split(' ').filter(Boolean);
-    p.innerHTML = hd('fa-crosshairs', '商机雷达', '销售 Agent 全网匹配公开采购 / 招标 / 询盘信息，分级后自动同步给产品、生产等部门，并生成报价审批', `<button class="btn btn-pri btn-sm" id="scan-now"><i class="fas fa-satellite-dish"></i>立即全网扫描</button>`)
+    p.innerHTML = hd('fa-crosshairs', '商机雷达', '商机检索也是一条指令：下达后由销售 Agent 全网检索并分级；A 级商机在该指令内追加跟进任务，报价走审批闸门', `<button class="btn btn-pri btn-sm" id="scan-now"><i class="fas fa-paper-plane"></i>下达找订单指令</button>`)
       + `<div class="grid2" style="grid-template-columns:420px 1fr">
         <div class="col">
           <div class="card"><div class="radar-big" id="lead-radar"><div class="sweep"></div>${[25, 50, 75].map((r) => `<div style="position:absolute;left:50%;top:50%;width:${r}%;height:${r}%;transform:translate(-50%,-50%);border:1px dashed rgba(62,224,255,.2);border-radius:50%"></div>`).join('')}<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;text-align:center" class="muted"><i class="fas fa-building" style="color:var(--c1);font-size:18px"></i><br>${esc(S.company.name.slice(0, 8))}</div></div>
           <div class="flex between mt" style="font-size:12px"><span><span class="st-dot" style="background:var(--ok)"></span> A级 高匹配</span><span><span class="st-dot" style="background:var(--c1)"></span> B级</span><span><span class="st-dot" style="background:var(--sub)"></span> C级</span></div></div>
           <div class="card"><div class="h3">监测关键词</div><div class="flex wrap mt" style="gap:6px">${kw.map((k) => `<button class="tag" data-kw="${esc(k)}" style="cursor:pointer">${esc(k)}</button>`).join('')}</div>
             <div class="flex mt"><input id="kw-in" placeholder="自定义关键词" style="flex:1;min-width:0"><button class="btn btn-ghost btn-sm" id="kw-go">检索</button></div>
-            <p class="hint mt">数据来源：公开网页检索（必应），仅采集公开信息；真实招投标平台/CRM 需签约授权后接入。线索分级规则：行业匹配度 × 金额 × 时效 × 可触达性。</p></div>
+            <p class="hint mt">点击关键词 = 下达一条「检索该关键词商机」的指令。${window.AI && AI.on ? '已连接 Genspark：全网检索 + AI 分级。' : '仿真模式：线索为模拟数据。'}分级规则：行业匹配度 × 金额 × 时效 × 可触达性。</p></div>
         </div>
         <div class="col" id="lead-list"></div>
       </div>`;
-    $('#scan-now').onclick = async () => { if (window.AI && AI.on) { await AI.scanLeads(true); renderLeadList(); return; } toast('销售 Agent 正在全网扫描…', 'fa-satellite-dish'); await fetchRealLeads(); for (let i = 0; i < 3; i++) setTimeout(findLead, i * 700); setTimeout(renderLeadList, 2400); };
+    $('#scan-now').onclick = () => { window.bossCommand('全网检索一批与主营匹配的采购/招标商机'); gotoView('flow'); };
     $$('[data-kw]').forEach((b) => b.onclick = () => searchKw(b.dataset.kw));
     $('#kw-go').onclick = () => searchKw($('#kw-in').value.trim());
     renderLeadList();
   }
-  async function searchKw(q) {
-    if (!q) return; toast(`检索「${q}」相关采购需求…`, 'fa-magnifying-glass');
-    try { const r = await fetch(`/api/leads?q=${encodeURIComponent(q)}`).then((x) => x.json()); (r.items || []).slice(0, 5).forEach((it) => S.sim.realLeads.unshift(it)); const n = Math.min(3, (r.items || []).length); for (let i = 0; i < n; i++) findLead(); if (!n) toast('未检索到公开结果，已用行业模型推断线索'), findLead(); renderLeadList(); } catch { toast('检索失败'); }
+  function searchKw(q) {
+    if (!q) return;
+    const sales = deptByLib('sales'); if (!sales) return toast('请先在组织中添加销售部');
+    Flow.issue(`检索「${q}」相关采购/招标商机`, { plan: [{ deptId: sales.id, title: `全网检索「${q}」采购需求线索`, deliverable: '分级商机清单与跟进建议', sla: 180, needApproval: false, kind: 'leads', kws: [q] }] });
+    toast(`已下达指令：检索「${q}」商机`, 'fa-paper-plane'); gotoView('flow');
   }
   function renderLeadList() {
     const box = $('#lead-list'); if (!box) return;
     const L = S.sim.leads;
     const radar = $('#lead-radar');
     if (radar) { $$('.blip', radar).forEach((b) => b.remove()); L.slice(0, 18).forEach((l) => { const r = seeded(l.id); const ang = r() * Math.PI * 2, dist = l.grade === 'A' ? 15 + r() * 12 : l.grade === 'B' ? 25 + r() * 12 : 35 + r() * 10; const b = document.createElement('div'); b.className = 'blip'; const c = l.grade === 'A' ? '#3ddc97' : l.grade === 'B' ? '#3ee0ff' : '#8fa3c8'; b.style.cssText = `left:${50 + Math.cos(ang) * dist}%;top:${50 + Math.sin(ang) * dist}%;background:${c};color:${c}`; b.title = l.title; radar.appendChild(b); }); }
-    const stl = { new: ['新发现', 'p'], synced: ['已同步部门', ''], quoted: ['已报价', 'warn'], won: ['已成交', 'ok'] };
-    box.innerHTML = `<div class="flex between"><span class="h3">线索池（${L.length}）</span><span class="dim" style="font-size:12px">A级自动同步 · B/C级可手动同步</span></div>` + (L.length ? L.slice(0, 30).map((l) => `<div class="lead"><div class="grade g-${l.grade}">${l.grade}</div><div style="flex:1;min-width:0">
+    const stl = { new: ['待跟进', 'p'], synced: ['跟进中', ''], quoted: ['已报价', 'warn'], won: ['已成交', 'ok'] };
+    box.innerHTML = `<div class="flex between"><span class="h3">线索池（${L.length}）</span><span class="dim" style="font-size:12px">A 级在来源指令内自动跟进 · 其余可「下达跟进」</span></div>` + (L.length ? L.slice(0, 30).map((l) => `<div class="lead"><div class="grade g-${l.grade}">${l.grade}</div><div style="flex:1;min-width:0">
       <div style="font-weight:600;font-size:13px">${l.link ? `<a href="${esc(l.link)}" target="_blank" style="color:inherit;text-decoration:none">${esc(l.title)} <i class="fas fa-up-right-from-square" style="font-size:10px;color:var(--c1)"></i></a>` : esc(l.title)}</div>
       ${l.desc ? `<div class="dim" style="font-size:11px;margin-top:3px;line-height:1.5">${esc(l.desc.slice(0, 110))}</div>` : ''}
       ${l.reason ? `<div style="font-size:12px;margin-top:5px;color:var(--c1)"><i class="fas fa-brain"></i> ${esc(l.reason)}${l.next ? ` <span class="muted">→ 下一步：${esc(l.next)}</span>` : ''}${l.buyer && l.buyer !== '未知' ? ` <span class="tag p">采购方：${esc(l.buyer)}</span>` : ''}</div>` : ''}
-      <div class="flex wrap" style="gap:6px;margin-top:6px"><span class="tag ${stl[l.status][1]}">${stl[l.status][0]}</span><span class="tag p">匹配 ${l.match}%</span>${l.value ? `<span class="tag">预估 ¥${fmtMoney(l.value)}</span>` : '<span class="tag">金额待确认</span>'}<span class="dim" style="font-size:11px">${esc(l.source)} · D${l.day}</span>${l.ai ? '<span class="tag ok">Genspark全网·AI分级</span>' : l.real ? '<span class="tag ok">公开网页</span>' : '<span class="tag warn">仿真线索</span>'}</div></div>
-      ${l.status === 'new' ? `<button class="btn btn-ghost btn-sm" onclick="syncLeadUI('${l.id}')"><i class="fas fa-share-nodes"></i>同步</button>` : ''}</div>`).join('') : '<div class="empty-state" style="height:200px">雷达扫描中，商机即将出现…</div>');
+      <div class="flex wrap" style="gap:6px;margin-top:6px"><span class="tag ${stl[l.status][1]}">${stl[l.status][0]}</span><span class="tag p">匹配 ${l.match}%</span>${l.value ? `<span class="tag">预估 ¥${fmtMoney(l.value)}</span>` : '<span class="tag">金额待确认</span>'}<span class="dim" style="font-size:11px">${esc(l.source)} · D${l.day}</span>${l.cmdId && Flow.cmd(l.cmdId) ? `<a class="lnk" style="font-size:11px" onclick="openCmdModal('${l.cmdId}')">#${Flow.cmd(l.cmdId).no}</a>` : ''}${l.ai ? '<span class="tag ok">Genspark全网·AI分级</span>' : l.real ? '<span class="tag ok">公开网页</span>' : '<span class="tag warn">仿真线索</span>'}</div></div>
+      ${l.status === 'new' ? `<button class="btn btn-ghost btn-sm" onclick="syncLeadUI('${l.id}')"><i class="fas fa-paper-plane"></i>下达跟进</button>` : ''}</div>`).join('') : '<div class="empty-state" style="height:200px">暂无商机 —— 下达「找订单」指令后，销售 Agent 才会开始检索</div>');
   }
-  window.syncLeadUI = (id) => { const l = S.sim.leads.find((x) => x.id === id); if (l) { syncLead(l); toast('已同步至相关部门并生成报价审批', 'fa-share-nodes'); renderLeadList(); } };
+  window.syncLeadUI = (id) => { const l = S.sim.leads.find((x) => x.id === id); if (!l) return; const c = Flow.followLead(l); if (c) { toast(`已下达跟进指令 #${c.no}`, 'fa-paper-plane'); renderLeadList(); } };
 
   // ---------------- Agent 军团 ----------------
   function agents(p) {
     const A = S.agents;
     const by = {}; A.forEach((a) => (by[a.deptId] = by[a.deptId] || []).push(a));
-    p.innerHTML = hd('fa-robot', `Agent 军团 · ${A.length} 个智能体`, '感知 → 规划 → 记忆 → 工具 → 执行；核心 Agent 负责策略与草稿，执行体负责批量低风险动作', `<button class="btn btn-ghost btn-sm" id="hire"><i class="fas fa-plus"></i>扩编执行体</button>`)
+    p.innerHTML = hd('fa-robot', `Agent 集群 · ${A.length} 个智能体`, '只接收指令分发的任务；等级随校验成绩自动升降：连续高分 ↑ 晋升自主，返工 / 人工复核 ↓ 降为建议', `<button class="btn btn-ghost btn-sm" id="hire"><i class="fas fa-plus"></i>扩编执行体</button>`)
       + `<div class="grid4">${AUTONOMY.map((a) => `<div class="stat" style="border-top:3px solid ${a.color}"><div class="flex between"><span class="lvl" style="background:${a.color}33;color:${a.color}">${a.lv}</span><b>${A.filter((x) => x.level === a.lv).length}</b></div><div style="font-size:13px;font-weight:700;margin-top:6px">${a.name}</div><div class="dim" style="font-size:11px;margin-top:3px;line-height:1.5">${a.desc}</div></div>`).join('')}</div>`
       + S.depts.map((d) => `<div class="card mt"><div class="ct"><span class="h3"><i class="fas ${d.icon}" style="color:${d.color}"></i> ${esc(d.name)} <span class="dim" style="font-size:12px;font-weight:400">· ${(by[d.id] || []).length} 个</span></span></div>
         <div class="grid4">${(by[d.id] || []).filter((a) => !a.sub).map(agentCard).join('')}</div>
-        <div class="flex wrap mt" style="gap:6px">${(by[d.id] || []).filter((a) => a.sub).map((a) => `<span class="tag ${a.status === 'busy' ? '' : 'p'}" style="cursor:pointer" onclick="openAgentModal('${a.id}')"><span class="st-dot" style="background:${a.status === 'busy' ? 'var(--ok)' : 'var(--dim)'}"></span>${esc(a.name.split('-')[1] || a.name)} · ${agentTotal(a)}</span>`).join('')}</div></div>`).join('');
+        <div class="flex wrap mt" style="gap:6px">${(by[d.id] || []).filter((a) => a.sub).map((a) => `<span class="tag ${a.status === 'busy' ? '' : 'p'}" style="cursor:pointer" onclick="openAgentModal('${a.id}')"><span class="st-dot" style="background:${a.status === 'busy' ? 'var(--ok)' : a.status === 'verify' ? 'var(--warn)' : 'var(--dim)'}"></span>${esc(a.name.split('-')[1] || a.name)} · ${agentTotal(a)}</span>`).join('')}</div></div>`).join('');
     $('#hire').onclick = () => { S.depts.forEach((d) => { for (let k = 0; k < 3; k++) S.agents.push({ id: uid('ag'), deptId: d.id, name: `${d.name.replace(/部$/, '')}执行体-${String(S.agents.filter((a) => a.deptId === d.id).length + 1).padStart(2, '0')}`, level: 'L3', score: rand(75, 92), done: 0, fail: 0, status: 'idle', sub: true, evals: { acc: rand(78, 95), evi: rand(70, 92), time: rand(75, 99), comp: rand(85, 99), val: rand(60, 88) } }); }); saveState(); agents(p); toast(`已扩编 ${S.depts.length * 3} 个执行体，当前共 ${S.agents.length} 个 Agent`, 'fa-robot'); };
   }
   function agentCard(a) {
-    const t = S.sim.tasks.find((x) => x.agentId === a.id && x.status !== 'done');
-    return `<div class="agent-card" onclick="openAgentModal('${a.id}')" style="cursor:pointer"><div class="ah"><div class="bot-ic"><i class="fas fa-robot"></i></div><div style="min-width:0"><b style="font-size:13px">${esc(a.name)}</b><div style="font-size:11px" class="dim"><span class="st-dot" style="background:${a.status === 'busy' ? 'var(--ok)' : 'var(--dim)'}"></span> ${a.status === 'busy' ? '执行中' : '待命'}</div></div><span class="lvl" style="margin-left:auto;background:${lvColor(a.level)}33;color:${lvColor(a.level)}">${a.level}</span></div>
-      <div class="dim" style="font-size:11px;min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t ? '▸ ' + esc(t.title) : '等待调度'}</div>
+    const t = S.sim.tasks.find((x) => x.agentId === a.id && !['done', 'rejected'].includes(x.status));
+    return `<div class="agent-card" onclick="openAgentModal('${a.id}')" style="cursor:pointer"><div class="ah"><div class="bot-ic"><i class="fas fa-robot"></i></div><div style="min-width:0"><b style="font-size:13px">${esc(a.name)}</b><div style="font-size:11px" class="dim"><span class="st-dot" style="background:${a.status === 'busy' ? 'var(--ok)' : a.status === 'verify' ? 'var(--warn)' : 'var(--dim)'}"></span> ${a.status === 'busy' ? '执行中' : a.status === 'verify' ? '待校验' : '待命'}</div></div><span class="lvl" style="margin-left:auto;background:${lvColor(a.level)}33;color:${lvColor(a.level)}">${a.level}</span></div>
+      <div class="dim" style="font-size:11px;min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t ? `▸ #${Flow.cmd(t.cmdId)?.no || ''} ${esc(t.title)}` : '待命，等待指令分发'}</div>
       <div class="flex between" style="font-size:11px"><span>评测 <b style="color:var(--c1)">${agentTotal(a)}</b></span><span class="muted">完成 ${a.done}</span><span class="muted">返工 ${a.fail}</span></div></div>`;
   }
 
-  // ---------------- 行动编排 ----------------
-  function tasks(p) {
-    const T = S.sim.tasks.filter((t) => t.status !== 'done' || t.day === S.sim.day);
-    const cols = [['todo', '待办'], ['doing', '执行中'], ['rework', '返工/复核'], ['done', '今日完成']];
-    p.innerHTML = hd('fa-diagram-project', '行动编排看板', '目标拆解 → 任务分派 → 执行 → 评测 → 返工/复核 → 完成；跨部门任务带来源标记')
-      + `<div class="kanban">${cols.map(([k, n]) => { const list = T.filter((t) => k === 'rework' ? (t.status === 'rework' || t.status === 'review') : t.status === k); return `<div class="kcol"><h4>${n}<span>${list.length}</span></h4>${list.slice(0, 18).map((t) => `<div class="kcard" onclick="openTaskModal('${t.id}')" style="cursor:pointer;border-left:3px solid ${deptColor(t.deptId)}">${t.real ? '<span class="tag ok" style="font-size:10px;padding:0 5px">AI</span> ' : ''}${t.kind === 'cmd' ? '<i class="fas fa-crown" style="color:#ffd54f"></i> ' : t.kind === 'lead' ? '<i class="fas fa-crosshairs" style="color:var(--ok)"></i> ' : ''}${esc(t.title)}
-        ${t.status === 'doing' || t.status === 'rework' ? `<div class="bar" style="margin-top:6px"><i style="width:${t.progress}%"></i></div>` : ''}
-        <div class="meta"><span>${esc(deptName(t.deptId))}</span><span>${esc((agentOf(t.agentId) || {}).name || '')}</span></div>
-        <div class="meta">${t.esc ? `<span style="color:var(--warn)">督办L${t.esc}</span>` : t.stuck ? '<span style="color:var(--bad)">卡点</span>' : '<span></span>'}${t.evals ? `<span style="color:${t.evals.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">评测 ${t.evals.total}</span>` : `<span>SLA ${Math.max(0, t.sla - t.age)}m</span>`}</div></div>`).join('')}</div>`; }).join('')}</div>`;
-  }
-
-  // ---------------- 评测督办 ----------------
-  function evalPage(p) {
-    const T = S.sim.tasks, done = T.filter((t) => t.evals);
-    const avg = done.length ? Math.round(done.reduce((s, t) => s + t.evals.total, 0) / done.length) : 0;
-    const open = T.filter((t) => t.status !== 'done');
-    const escs = open.filter((t) => t.esc > 0 || t.stuck).sort((a, b) => b.esc - a.esc);
-    const rank = [...S.agents].sort((a, b) => agentTotal(b) - agentTotal(a));
-    p.innerHTML = hd('fa-clipboard-check', '评测 · 校验 · 督办', 'Agent 工作不是“看起来聪明”，而是可评测、可追溯、可督办、可停损')
-      + `<div class="grid3">
-        <div class="mech"><h4><i class="fas fa-scale-balanced" style="color:var(--c1)"></i>① 五维评测机制</h4><ul>${EVAL_DIMS.map((d) => `<li><b style="color:var(--txt)">${d.name} ${d.w}%</b>：${d.desc}</li>`).join('')}</ul><div class="hint mt">≥80 通过；&lt;80 自动打回重做一次；二次不达标转人工复核；连续低于 78 分降级为 L2 草稿模式。</div></div>
-        <div class="mech"><h4><i class="fas fa-calendar-check" style="color:var(--ok)"></i>② 每日进展校验</h4><ul>${CHECKPOINTS.map((c) => `<li>${c.name}</li>`).join('')}</ul><div class="hint mt">每个检查点由智脑自动扫描在办任务的进度、SLA、证据完整性与卡点。</div></div>
-        <div class="mech"><h4><i class="fas fa-bell" style="color:var(--warn)"></i>③ 督办升级链</h4><div class="esc mt">${['L1 提醒 Agent', 'L2 通知负责人', 'L3 上报老板'].map((s, i) => `${i ? '<i class="fas fa-arrow-right dim"></i>' : ''}<span class="s" style="border-color:${['#4fc3f7', '#ffb547', '#ff5d6c'][i]}">${s}</span>`).join('')}</div><div class="hint mt">逾期或卡点触发；每升级一级 SLA 延长 120 分钟；L3 事项在老板简报中置顶。<br>④ 订单挖掘：每日自动扫描商机，A级自动同步，报价/签约走 L4 审批。</div></div>
+  // ---------------- 工作机制：循环 · 审批 · 校验 · 提升 ----------------
+  function mech(p) {
+    const st = Flow.stats(), M = S.sim.metrics, T = S.sim.tasks;
+    const verified = T.filter((t) => t.evals).sort((x, y) => (y.vt || 0) - (x.vt || 0));
+    const avg = verified.length ? Math.round(verified.reduce((s, t) => s + t.evals.total, 0) / verified.length) : 0;
+    const open = T.filter((t) => ['queued', 'exec', 'rework'].includes(t.status));
+    const escs = open.filter((t) => t.esc > 0 || t.stuck || t.paused).sort((x, y) => y.esc - x.esc);
+    const reworks = T.filter((t) => t.status === 'rework' || (t.rework && t.status !== 'done'));
+    const rank = S.agents.filter((x) => !x.sub).sort((x, y) => agentTotal(y) - agentTotal(x));
+    const lvCount = ['L1', 'L2', 'L3'].map((lv) => [lv, S.agents.filter((x) => !x.sub && x.level === lv).length]);
+    const cno = (id) => { const c = Flow.cmd(id); return c ? `<span class="cno" onclick="openCmdModal('${c.id}')">#${c.no}</span>` : ''; };
+    p.innerHTML = hd('fa-gears', '工作机制', '指令驱动的闭环：每一项工作都从老板指令出发，经「循环 · 审批 · 校验 · 提升」四个机制收口')
+      + `<div class="mech-flow">
+        ${[['fa-crown', '老板指令', '#ffd54f'], ['fa-brain', '智脑拆解', '#3ee0ff'], ['fa-user-shield', '闸门①方案确认', '#ffb547'], ['fa-share-nodes', '分发到部门 Agent', '#8b5cff'], ['fa-gear', '执行', '#4fc3f7'], ['fa-clipboard-check', '五维校验', '#3ddc97'], ['fa-shield-halved', '闸门②成果审批', '#ffb547'], ['fa-box-open', '交付', '#3ddc97'], ['fa-seedling', '复盘提升', '#b69bff']].map(([i, n, c], k) => `${k ? '<i class="fas fa-chevron-right arr"></i>' : ''}<span class="mf" style="--c:${c}"><i class="fas ${i}"></i>${n}</span>`).join('')}
+        <div class="mf-loops"><span><i class="fas fa-rotate-left" style="color:#ffb547"></i> 校验不过 → 返工</span><span><i class="fas fa-rotate-left" style="color:#ff5d6c"></i> 方案驳回 → 重拆</span><span><i class="fas fa-repeat" style="color:#3ddc97"></i> 例行/迭代 → 下一轮</span><span><i class="fas fa-book" style="color:#b69bff"></i> 经验 → 注入下次拆解与执行</span></div>
       </div>
       <div class="grid4 mt">
-        <div class="stat"><div class="l">平均评测分</div><div class="v" style="color:var(--c1)">${avg}</div></div>
-        <div class="stat"><div class="l">一次通过率</div><div class="v">${S.sim.metrics.done ? Math.round((1 - S.sim.metrics.rework / (S.sim.metrics.done + S.sim.metrics.rework)) * 100) : 100}%</div></div>
-        <div class="stat"><div class="l">累计督办</div><div class="v" style="color:var(--warn)">${S.sim.metrics.esc}</div></div>
-        <div class="stat"><div class="l">当前卡点/逾期</div><div class="v" style="color:var(--bad)">${escs.length}</div></div>
+        <div class="mech-card" style="--c:#3ddc97"><div class="mc-hd"><i class="fas fa-repeat"></i><b>循环</b><span class="dim">让工作持续转起来</span></div>
+          <div class="grid3"><div class="stat sm"><div class="l">返工中</div><div class="v">${st.rework}</div></div><div class="stat sm"><div class="l">迭代轮次</div><div class="v">${st.iterations}</div></div><div class="stat sm"><div class="l">例行指令</div><div class="v">${st.routines}</div></div></div>
+          <ul class="mech-ul"><li>校验 &lt;80 分 → 带评语返工，最多 1 次</li><li>老板驳回方案 → 带意见重新拆解</li><li>指令验收“部分达成” → 一键下一轮迭代</li><li>例行指令每天 09:00 自动续跑</li></ul></div>
+        <div class="mech-card" style="--c:#ffb547"><div class="mc-hd"><i class="fas fa-user-shield"></i><b>审批</b><span class="dim">两道闸门 · 老板拍板</span></div>
+          <div class="grid3"><div class="stat sm"><div class="l">待确认方案</div><div class="v">${st.pendPlan}</div></div><div class="stat sm"><div class="l">待审成果</div><div class="v">${st.pendResult}</div></div><div class="stat sm"><div class="l">驳回率</div><div class="v">${M.approvals ? Math.round(M.rejects / M.approvals * 100) : 0}%</div></div></div>
+          <ul class="mech-ul"><li><b>闸门①</b> 方案确认：拆解后先给老板过目</li><li><b>闸门②</b> 成果审批：高风险(${HIGH_RISK_ACTIONS.slice(0, 3).join('/')}…)与 L1 Agent 成果</li><li>人工复核：返工后仍不达标</li></ul>
+          <label class="chk mt"><input type="checkbox" id="opt-plan" ${S.sim.settings.planConfirm ? 'checked' : ''}> 新指令拆解后需我确认（闸门①）</label></div>
+        <div class="mech-card" style="--c:#3ee0ff"><div class="mc-hd"><i class="fas fa-clipboard-check"></i><b>校验</b><span class="dim">任务级 + 指令级</span></div>
+          <div class="grid3"><div class="stat sm"><div class="l">今日校验</div><div class="v">${st.verifyToday}</div></div><div class="stat sm"><div class="l">一次通过率</div><div class="v">${st.passRate}%</div></div><div class="stat sm"><div class="l">平均分</div><div class="v">${avg}</div></div></div>
+          <div class="dims">${EVAL_DIMS.map((d) => `<span>${d.name}<b>${d.w}</b></span>`).join('')}</div>
+          <ul class="mech-ul"><li>每项成果由质检 Agent 五维打分，≥80 通过</li><li>全部任务交付后，对指令做整体验收：达成 / 部分 / 未达成</li><li>督办：逾期→L1 提醒 Agent→L2 负责人→L3 老板</li></ul></div>
+        <div class="mech-card" style="--c:#b69bff"><div class="mc-hd"><i class="fas fa-seedling"></i><b>提升</b><span class="dim">越用越懂你的企业</span></div>
+          <div class="grid3"><div class="stat sm"><div class="l">经验库</div><div class="v">${st.knowledge}</div></div><div class="stat sm"><div class="l">晋级</div><div class="v" style="color:var(--ok)">${st.promoted}</div></div><div class="stat sm"><div class="l">降级</div><div class="v" style="color:var(--bad)">${st.demoted}</div></div></div>
+          <ul class="mech-ul"><li>每条指令验收后复盘，提炼经验写入企业经验库</li><li>经验自动注入同部门后续拆解与执行</li><li>连续 2 次 ≥88 分 → 晋级；返工/人工兜底 → 降级</li></ul>
+          <div class="dims">${lvCount.map(([lv, n]) => `<span style="color:${lvColor(lv)}">${lv}<b>${n}</b></span>`).join('')}</div></div>
+      </div>
+      <div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-clock" style="color:var(--c1)"></i> 每日机制节拍</span><span class="dim" style="font-size:11px">时钟只驱动检查，不凭空制造工作</span></div>
+        <div class="cadence">${CHECKPOINTS.map((c) => `<span class="cp ${S.sim.cp[S.sim.day + c.k] ? 'on' : ''}"><b>${esc(c.name.split(" ")[0])}</b>${esc(c.name.split(" ")[1] || "")}</span>`).join('<i class="fas fa-chevron-right dim"></i>')}</div></div>
+      <div class="grid2 mt">
+        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-repeat" style="color:#3ddc97"></i> 例行指令 / 返工循环</span></div>
+          ${S.sim.routines.length ? S.sim.routines.map((r) => `<div class="rt"><i class="fas fa-repeat" style="color:#3ddc97"></i><span style="flex:1">${esc(r.text)}</span><span class="dim">自第${r.since}天</span><button class="btn btn-ghost btn-sm" data-unr="${esc(r.text)}">停止</button></div>`).join('') : '<div class="hint">暂无例行指令。下指令时勾选「每日例行」即可让 Agent 每天自动续跑。</div>'}
+          <div class="h4 mt">返工中（${reworks.length}）</div>
+          ${reworks.slice(0, 6).map((t) => `<div class="rt" style="cursor:pointer" onclick="openTaskModal('${t.id}')">${cno(t.cmdId)}<span style="flex:1">${esc(t.title.slice(0, 26))}</span><span class="dim" style="max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.feedback || '')}</span></div>`).join('') || '<div class="hint">✓ 当前没有返工任务</div>'}</div>
+        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-bell" style="color:var(--warn)"></i> 督办清单</span><span class="dim" style="font-size:11px">累计督办 ${M.esc}</span></div>
+          ${escs.length ? `<table class="table"><tr><th>指令</th><th>任务</th><th>状态</th><th>级别</th><th></th></tr>${escs.slice(0, 10).map((t) => `<tr><td>${cno(t.cmdId)}</td><td>${esc(t.title.slice(0, 20))}</td><td>${t.stuck || t.paused ? '<span class="tag bad">卡点</span>' : '<span class="tag warn">逾期</span>'}</td><td>${t.esc ? `<span class="lvl" style="background:rgba(255,181,71,.2);color:var(--warn)">L${t.esc}</span>` : '-'}</td><td><button class="btn btn-ghost btn-sm" onclick="unblock('${t.id}')">协助解除</button></td></tr>`).join('')}</table>` : '<div class="hint">✓ 暂无逾期或卡点任务</div>'}</div>
       </div>
       <div class="grid2 mt">
-        <div class="card"><div class="ct"><span class="h3">督办清单</span><button class="btn btn-ghost btn-sm" id="run-patrol"><i class="fas fa-magnifying-glass"></i>立即巡检</button></div>
-          ${escs.length ? `<table class="table"><tr><th>任务</th><th>部门</th><th>状态</th><th>级别</th><th></th></tr>${escs.slice(0, 12).map((t) => `<tr><td>${esc(t.title.slice(0, 22))}</td><td>${esc(deptName(t.deptId))}</td><td>${t.stuck ? '<span class="tag bad">卡点</span>' : '<span class="tag warn">逾期</span>'}</td><td>${t.esc ? `<span class="lvl" style="background:rgba(255,181,71,.2);color:var(--warn)">L${t.esc}</span>` : '-'}</td><td><button class="btn btn-ghost btn-sm" onclick="unblock('${t.id}')">协助解除</button></td></tr>`).join('')}</table>` : '<div class="hint">✓ 暂无逾期或卡点任务</div>'}</div>
-        <div class="card"><div class="ct"><span class="h3">Agent 评测排行榜</span><span class="dim" style="font-size:11px">Top 10 / 末位预警</span></div>
-          <table class="table"><tr><th>#</th><th>Agent</th><th>部门</th>${EVAL_DIMS.map((d) => `<th>${d.name.slice(0, 2)}</th>`).join('')}<th>总分</th></tr>
-          ${rank.slice(0, 8).map((a, i) => evRow(a, i + 1)).join('')}<tr><td colspan="9" class="dim" style="text-align:center">· · ·</td></tr>${rank.slice(-2).map((a, i) => evRow(a, rank.length - 1 + i, true)).join('')}</table></div>
-      </div>
-      <div class="card mt"><div class="ct"><span class="h3">最近评测记录</span></div><table class="table"><tr><th>任务</th><th>执行 Agent</th>${EVAL_DIMS.map((d) => `<th>${d.name}</th>`).join('')}<th>总分</th><th>结论</th></tr>
-        ${[...done.filter((t) => t.real), ...done.filter((t) => !t.real)].slice(0, 12).map((t) => `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')"><td>${esc(t.title.slice(0, 20))}</td><td>${esc((agentOf(t.agentId) || {}).name || '')}</td>${EVAL_DIMS.map((d) => `<td>${t.evals.ev[d.k]}</td>`).join('')}<td><b>${t.evals.total}</b></td><td>${t.real ? '<span class="tag p">真实</span> ' : ''}${t.status === 'done' ? '<span class="tag ok">通过</span>' : t.status === 'review' ? '<span class="tag warn">人工复核</span>' : '<span class="tag bad">打回</span>'}</td></tr>`).join('')}</table></div>`;
-    $('#run-patrol').onclick = () => { const o = S.sim.tasks.filter((t) => t.status !== 'done' && (t.age > t.sla * .8 || t.stuck)); o.forEach((t) => { t.esc = Math.min(3, t.esc + 1); }); simLog('cp', `🔎 老板手动发起巡检：${o.length} 项进入督办`, '#ffb547'); toast(`巡检完成：${o.length} 项进入督办`); evalPage(p); };
+        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-clipboard-check" style="color:var(--c1)"></i> 最近校验记录</span></div>
+          ${verified.length ? `<table class="table"><tr><th>指令</th><th>任务</th>${EVAL_DIMS.map((d) => `<th>${d.name.slice(0, 2)}</th>`).join('')}<th>总分</th><th>结论</th></tr>${verified.slice(0, 10).map((t) => `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')"><td>${cno(t.cmdId)}</td><td>${t.real ? '<span class="tag ok" style="font-size:10px;padding:0 4px">AI</span> ' : ''}${esc(t.title.slice(0, 16))}</td>${EVAL_DIMS.map((d) => `<td>${t.evals.ev[d.k]}</td>`).join('')}<td><b style="color:${t.evals.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">${t.evals.total}</b></td><td><span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span></td></tr>`).join('')}</table>` : '<div class="hint">下达指令后，每项成果的五维校验结果会出现在这里</div>'}</div>
+        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-book" style="color:#b69bff"></i> 企业经验库</span><span class="dim" style="font-size:11px">自动注入后续指令</span></div>
+          ${S.sim.knowledge.slice(0, 8).map((k) => `<div class="rt"><i class="fas fa-lightbulb" style="color:#b69bff"></i><span style="flex:1">${esc(k.title)}</span><span class="dim">${esc(k.dept)} · ${k.cmdNo ? '#' + k.cmdNo : ''} · 引用${k.used || 0}</span></div>`).join('') || '<div class="hint">指令验收复盘后，经验会沉淀到这里</div>'}
+          <div class="h4 mt">Agent 评测排行（核心 Agent）</div>
+          <table class="table"><tr><th>#</th><th>Agent</th><th>部门</th><th>等级</th><th>完成</th><th>返工</th><th>总分</th></tr>${rank.slice(0, 6).map((x, i) => `<tr style="cursor:pointer" onclick="openAgentModal('${x.id}')"><td>${i + 1}</td><td>${esc(x.name)}</td><td>${esc(deptName(x.deptId))}</td><td><span class="lvl" style="background:${lvColor(x.level)}33;color:${lvColor(x.level)}">${x.level}</span></td><td>${x.done}</td><td>${x.fail}</td><td><b>${agentTotal(x)}</b></td></tr>`).join('')}</table></div>
+      </div>`;
+    $('#opt-plan').onchange = (e) => { S.sim.settings.planConfirm = e.target.checked; saveState(); toast(e.target.checked ? '已开启：新指令需老板确认方案' : '已关闭：拆解后直接分发'); };
+    $$('[data-unr]', p).forEach((b) => b.onclick = () => { Flow.toggleRoutine(b.dataset.unr, false); toast('已停止该例行指令'); mech(p); });
   }
-  const evRow = (a, i, low) => `<tr ${low ? 'style="color:var(--bad)"' : ''}><td>${i}</td><td>${esc(a.name)}</td><td>${esc(deptName(a.deptId))}</td>${EVAL_DIMS.map((d) => `<td>${a.evals[d.k]}</td>`).join('')}<td><b>${agentTotal(a)}</b></td></tr>`;
-  window.unblock = (id) => { const t = S.sim.tasks.find((x) => x.id === id); if (!t) return; t.stuck = false; t.esc = 0; t.sla = t.age + 120; simLog('esc', `🤝 老板协助解除「${esc(t.title.slice(0, 18))}」卡点`, '#3ddc97'); toast('已解除卡点，任务恢复执行'); };
+  window.unblock = (id) => { const t = Flow.task(id); if (!t) return; t.stuck = false; t.paused = false; t.retries = 0; t.esc = 0; t.sla = t.age + 120; simLog('esc', `🤝 老板协助解除「${esc(t.title.slice(0, 18))}」卡点`, '#3ddc97', t.cmdId); toast('已解除卡点，任务恢复执行'); saveState(); Flow.refresh(); };
 
   // ---------------- 内容工厂 ----------------
   const THEMES = [['#0b1430', '#3ee0ff', '#8b5cff'], ['#1a0b20', '#ff4fa3', '#ffb547'], ['#06201a', '#3ddc97', '#3ee0ff'], ['#1f1406', '#ffd54f', '#ff7043']];
@@ -236,12 +250,16 @@
     rec.start(); toast('正在录制 5 秒宣传视频…', 'fa-film'); playVideo(4500, () => setTimeout(() => rec.stop(), 500));
   }
 
-  // ---------------- 审批护栏 ----------------
+  // ---------------- 审批闸门 ----------------
   function approve(p) {
     const A = S.sim.approvals, pend = A.filter((a) => a.status === 'pending');
-    p.innerHTML = hd('fa-shield-halved', '老板审批 · 高风险护栏', 'L4 动作 AI 不得自主执行：' + HIGH_RISK_ACTIONS.join(' / '), pend.length > 1 ? `<button class="btn btn-ghost btn-sm" id="approve-all"><i class="fas fa-check-double"></i>全部批准</button>` : '')
-      + `<div class="col">${A.length ? A.slice(0, 30).map((a) => `<div class="approval ${a.status === 'approved' ? 'done' : a.status === 'rejected' ? 'rej' : ''}"><span class="lvl" style="background:rgba(255,93,108,.2);color:var(--bad)">L4</span><div style="flex:1"><b>${esc(a.action)}</b> <span class="dim" style="font-size:12px">· ${esc(deptName(a.deptId))} · D${a.day} ${a.t}</span><div class="muted" style="font-size:13px;margin-top:3px">${esc(a.desc)}</div>${a.amount ? `<div style="font-size:12px;margin-top:3px">涉及金额 <b style="color:var(--warn)">¥${fmtMoney(a.amount)}</b></div>` : ''}</div>
-        ${a.status === 'pending' ? `<button class="btn btn-sm btn-danger" onclick="decideApproval('${a.id}',false);gotoView('approve')">驳回</button><button class="btn btn-pri btn-sm" onclick="decideApproval('${a.id}',true);gotoView('approve')"><i class="fas fa-check"></i>批准</button>` : `<span class="tag ${a.status === 'approved' ? 'ok' : 'bad'}">${a.status === 'approved' ? '已批准' : '已驳回'}</span>`}</div>`).join('') : '<div class="empty-state" style="height:300px"><div><i class="fas fa-shield-halved" style="font-size:36px"></i><p class="mt">暂无待审批事项</p><p class="hint">商机报价、追加预算、对外发布等动作会在这里等待您决策</p></div></div>'}</div>`;
+    const G = [['plan', '闸门① 方案确认', 'fa-diagram-project', '智脑拆解后的任务方案，确认后才分发到部门'], ['result', '闸门② 成果审批', 'fa-shield-halved', '已通过校验、但属于高风险或 L1 Agent 的成果'], ['review', '人工复核', 'fa-user-check', '返工后仍未达标，需要老板判断'], ['content', '对外发布', 'fa-bullhorn', '内容工厂产出的海报/视频分发']];
+    const row = (a) => { const c = Flow.cmd(a.cmdId); return `<div class="approval ${a.status === 'approved' ? 'done' : a.status === 'rejected' ? 'rej' : ''}">${c ? `<span class="cmd-no sm" onclick="openCmdModal('${c.id}')">#${c.no}</span>` : ''}<div style="flex:1;min-width:0"><b>${esc(a.action)}</b> <span class="dim" style="font-size:12px">· ${a.deptId ? esc(deptName(a.deptId)) + ' · ' : ''}D${a.day} ${a.t}</span><div class="muted" style="font-size:13px;margin-top:3px">${esc(a.desc)}</div>${a.reason ? `<div style="font-size:12px;margin-top:3px;color:var(--warn)">意见：${esc(a.reason)}</div>` : ''}</div>
+      ${a.taskId ? `<button class="btn btn-ghost btn-sm" onclick="openTaskModal('${a.taskId}')"><i class="fas fa-file-lines"></i>成果</button>` : ''}
+      ${a.status === 'pending' ? `<button class="btn btn-sm btn-danger" onclick="decideApproval('${a.id}',false);gotoView('approve')">驳回</button><button class="btn btn-pri btn-sm" onclick="decideApproval('${a.id}',true);gotoView('approve')"><i class="fas fa-check"></i>${a.kind === 'plan' ? '确认分发' : '批准'}</button>` : `<span class="tag ${a.status === 'approved' ? 'ok' : 'bad'}">${a.status === 'approved' ? '已批准' : '已驳回'}</span>`}</div>`; };
+    p.innerHTML = hd('fa-user-shield', '审批闸门', '老板只在关键节点拍板：方案确认 → 成果审批；驳回意见会自动成为下一轮循环的依据', pend.length > 1 ? `<button class="btn btn-ghost btn-sm" id="approve-all"><i class="fas fa-check-double"></i>全部批准（${pend.length}）</button>` : '')
+      + (A.length ? G.map(([k, n, i, d]) => { const L = A.filter((a) => a.kind === k || (k === 'content' && !['plan', 'result', 'review'].includes(a.kind))); if (!L.length) return ''; const pn = L.filter((a) => a.status === 'pending'); return `<div class="card mt"><div class="ct"><span class="h3"><i class="fas ${i}" style="color:var(--warn)"></i> ${n} <span class="tag ${pn.length ? 'warn' : 'ok'}">${pn.length ? pn.length + ' 待处理' : '已清空'}</span></span><span class="dim" style="font-size:11px">${d}</span></div><div class="col">${[...pn, ...L.filter((a) => a.status !== 'pending').slice(0, 5)].map(row).join('')}</div></div>`; }).join('')
+        : '<div class="empty-state" style="height:300px"><div><i class="fas fa-user-shield" style="font-size:36px"></i><p class="mt">暂无审批事项</p><p class="hint">下达指令后，拆解方案和高风险成果会在这里等待您拍板</p></div></div>');
     const b = $('#approve-all'); if (b) b.onclick = () => { pend.forEach((a) => decideApproval(a.id, true)); approve(p); toast(`已批准 ${pend.length} 项`); };
   }
 
@@ -284,13 +302,13 @@
     openDrawer(`<div class="drawer-hd"><div class="ic" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:${d.color};font-size:20px"><i class="fas ${d.icon}"></i></div><div><div class="h2">${esc(d.name)}</div><div class="hint">${l ? 'KPI：' + l.kpi.join(' · ') : '自定义部门'}</div></div><button class="close-x" data-close><i class="fas fa-xmark"></i></button></div>
       <div class="drawer-bd">
         <div class="grid3"><div class="stat"><div class="l">员工</div><div class="v">${st.length}</div></div><div class="stat"><div class="l">Agent</div><div class="v">${ag.length}</div></div><div class="stat"><div class="l">今日完成</div><div class="v">${T.filter((t) => t.status === 'done' && t.day === S.sim.day).length}</div></div></div>
-        <div class="card"><div class="ct"><span class="h3">下达部门任务</span></div><div class="flex"><input id="dt-in" placeholder="输入任务，或点击下方推荐" style="flex:1"><button class="btn btn-pri btn-sm" id="dt-go">派发</button></div>
+        <div class="card"><div class="ct"><span class="h3">向本部门下达指令</span><span class="dim" style="font-size:11px">直达本部门 · 仍走校验与审批</span></div><div class="flex"><input id="dt-in" placeholder="输入指令，或点击下方推荐" style="flex:1"><button class="btn btn-pri btn-sm" id="dt-go">下达</button></div>
           <div class="flex wrap mt" style="gap:6px">${(l ? l.tasks : []).map((t) => `<button class="tag" data-dt="${esc(t)}" style="cursor:pointer">${esc(t)}</button>`).join('')}</div></div>
-        <div class="card"><div class="ct"><span class="h3">在办任务</span></div>${T.filter((t) => t.status !== 'done').slice(0, 10).map((t) => `<div style="margin:8px 0"><div class="flex between" style="font-size:12px"><span>${esc(t.title)}</span><span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span></div><div class="bar" style="margin-top:4px"><i style="width:${t.progress}%"></i></div></div>`).join('') || '<div class="hint">暂无</div>'}</div>
+        <div class="card"><div class="ct"><span class="h3">在办任务</span></div>${T.filter((t) => !['done', 'rejected'].includes(t.status)).slice(0, 10).map((t) => `<div style="margin:8px 0;cursor:pointer" onclick="openTaskModal('${t.id}')"><div class="flex between" style="font-size:12px"><span>${Flow.cmd(t.cmdId) ? '#' + Flow.cmd(t.cmdId).no + ' ' : ''}${esc(t.title)}</span><span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span></div><div class="bar" style="margin-top:4px"><i style="width:${t.progress}%"></i></div></div>`).join('') || '<div class="hint">暂无在办任务 —— 本部门只在接到指令后开工</div>'}</div>
         <div class="card"><div class="ct"><span class="h3">Agent 编队</span></div><div class="grid2">${ag.filter((a) => !a.sub).map(agentCard).join('')}</div><div class="hint mt">另有 ${ag.filter((a) => a.sub).length} 个执行体负责批量低风险动作</div></div>
         <div class="card"><div class="ct"><span class="h3">员工</span></div>${st.map((s) => `<div class="flex" style="margin:8px 0;cursor:pointer" onclick="openStaffModal('${s.id}')"><div class="avatar" style="width:32px;height:32px;font-size:13px;background:${avColor(s.name)}">${esc(s.name[0])}</div><div style="flex:1"><b style="font-size:13px">${esc(s.name)}</b> <span class="dim" style="font-size:12px">${esc(s.pos)}</span></div><b class="grad-txt">${s.value}</b></div>`).join('')}</div>
       </div>`, (dr) => {
-      const go = (txt) => { if (!txt) return; createTask(id, txt, { core: true, kind: 'cmd', real: true, deliverable: '可直接使用的工作成果' }); packet('boss', id, '派发', '#ffd54f'); toast(`已派发给 ${d.name}`); openDeptDrawer(id); };
+      const go = (txt) => { if (!txt) return; Flow.issue(`${d.name}：${txt}`, { plan: [{ deptId: id, title: txt, deliverable: '可直接使用的工作成果', sla: 240, needApproval: false, kind: d.lib === 'sales' && /商机|线索|订单|客户|询价|采购/.test(txt) ? 'leads' : null }] }); closeOverlay(); gotoView('flow'); toast(`指令已下达至 ${d.name}，可在调度中枢跟踪`); };
       $('#dt-go', dr).onclick = () => go($('#dt-in', dr).value.trim());
       $$('[data-dt]', dr).forEach((b) => b.onclick = () => go(b.dataset.dt));
     });

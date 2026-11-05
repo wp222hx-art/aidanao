@@ -6,6 +6,6 @@ window.renderApp = function () {
 };
 document.addEventListener('DOMContentLoaded', async () => {
   renderApp();
-  if (window.AI) { await AI.init(); if (S.launched && S.depts.length && $('#hq-main')) gotoView('twin'); }
+  if (window.AI) { await AI.init(); if (S.launched && S.depts.length && $('#hq-main')) gotoView(window.currentView ? currentView() : 'flow'); }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(); });

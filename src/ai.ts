@@ -142,7 +142,7 @@ ai.post('/command', async (c) => {
   const depts = (b.depts || []).map((d: any) => `${d.id}:${d.name}`).join('，')
   const out = await llm(c.env,
     '你是企业的 AI 首席运营官，把老板的一句话指令拆解成可执行、可验收的部门任务。高风险动作（追加预算、群发触达、报价签约、人事决定、对外支付、税务申报、对外发布）必须标记 needApproval=true。输出 JSON。',
-    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 300)}\n可用部门（id:名称）：${depts}\n\n输出 JSON：{"goal":"把指令改写成可衡量目标，40字内","tasks":[{"deptId":"必须是上面的id","title":"任务标题≤24字","deliverable":"交付物≤30字","sla":预计分钟(60-480),"needApproval":true/false}]}\n给 3-6 个任务，覆盖最相关的部门。`)
+    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 300)}\n可用部门（id:名称）：${depts}${b.feedback ? `\n\n【上一轮反馈，必须据此改进拆解】\n${clip(b.feedback, 600)}` : ''}${(b.knowledge || []).length ? `\n\n【企业已沉淀的经验，拆解时遵循】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}\n\n输出 JSON：{"goal":"把指令改写成可衡量目标，40字内","tasks":[{"deptId":"必须是上面的id","title":"任务标题≤24字","deliverable":"交付物≤30字","sla":预计分钟(60-480),"needApproval":true/false}]}\n给 3-6 个任务，覆盖最相关的部门。`)
   const ids = new Set((b.depts || []).map((d: any) => d.id))
   const tasks = (out.tasks || []).filter((t: any) => ids.has(t.deptId)).slice(0, 6).map((t: any) => ({ deptId: t.deptId, title: clip(t.title, 40), deliverable: clip(t.deliverable, 60), sla: Math.max(60, Math.min(480, +t.sla || 180)), needApproval: !!t.needApproval }))
   return c.json({ ok: true, goal: clip(out.goal, 80), tasks })
@@ -151,13 +151,14 @@ ai.post('/command', async (c) => {
 // ---------- ⑤ Agent 真实执行 + 独立评测（五维） ----------
 ai.post('/execute', async (c) => {
   const b = await c.req.json<any>()
-  const ctx = `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n主营：${clip(b.business, 150)}\n部门：${clip(b.dept, 20)}\n执行Agent：${clip(b.agent, 30)}`
+  const ctx = `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n主营：${clip(b.business, 150)}\n部门：${clip(b.dept, 20)}\n执行Agent：${clip(b.agent, 30)}${b.goal ? `\n本任务所属指令目标：${clip(b.goal, 120)}` : ''}`
   let research = ''
   if (b.research) { const sr = await tool(c.env, 'web_search', { q: clip(`${b.company} ${b.task}`, 60) }).catch(() => null); research = (sr?.organic_results || []).slice(0, 5).map((x: any) => `- ${x.title}：${clip(x.snippet, 120)}（${x.link}）`).join('\n') }
   const output = await llm(c.env,
     `你是企业中的「${clip(b.agent, 30)}」，隶属${clip(b.dept, 20)}。产出可直接使用的工作成果（Markdown，600字以内）：结论先行、分点、带数字/步骤/责任人建议；引用外部信息要注明来源；不确定处标注“需人工确认”。不得承诺未经验证的收益；高风险动作只给建议不执行。`,
-    `${ctx}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable || '按任务要求', 80)}${research ? `\n\n【可用的公开检索信息】\n${research}` : ''}${b.feedback ? `\n\n【上一版评测未通过，评审意见】${clip(b.feedback, 300)}\n【上一版】${clip(b.previous, 1500)}\n请针对意见改进后重新输出完整成果。` : ''}`,
+    `${ctx}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable || '按任务要求', 80)}${(b.knowledge || []).length ? `\n\n【企业经验库，执行时遵循】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}${research ? `\n\n【可用的公开检索信息】\n${research}` : ''}${b.feedback ? `\n\n【上一版评测未通过，评审意见】${clip(b.feedback, 300)}\n【上一版】${clip(b.previous, 1500)}\n请针对意见改进后重新输出完整成果。` : ''}`,
     { json: false, effort: 'low' }) as string
+  if (b.evaluate === false) return c.json({ ok: true, output, researched: !!research })
   const r = await evaluate(c.env, ctx, clip(b.task, 200), output)
   return c.json({ ok: true, output, ...r, researched: !!research })
 })
@@ -177,6 +178,17 @@ ai.post('/evaluate', async (c) => {
   const b = await c.req.json<any>()
   const ctx = `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n部门：${clip(b.dept, 20)}\n执行Agent：${clip(b.agent, 30)}`
   return c.json({ ok: true, ...(await evaluate(c.env, ctx, clip(b.task, 200), String(b.output || ''))) })
+})
+
+// ---------- 指令级验收与复盘（提升机制） ----------
+ai.post('/review', async (c) => {
+  const b = await c.req.json<any>()
+  const results = (b.results || []).slice(0, 10).map((r: any, i: number) => `【${i + 1}】${clip(r.dept, 20)}｜${clip(r.title, 40)}｜校验${Math.round(+r.score || 0)}分｜返工${+r.rework || 0}次${r.human ? '｜人工通过' : ''}\n${clip(r.output, 700)}`).join('\n\n')
+  const out = await llm(c.env,
+    '你是企业的 AI 首席运营官，对一条老板指令的整体执行结果做验收与复盘：判断目标是否达成、提炼可复用经验、给出下一轮改进方向。客观、具体，不夸大。输出 JSON。',
+    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 200)}\n目标：${clip(b.goal, 120)}\n部门：${clip((b.depts || []).join('、'), 300)}\n\n【各部门交付】\n${results}\n\n输出 JSON：{"score":0-100（整体完成质量与目标贴合度）,"verdict":"achieved|partial|failed","summary":"60字内验收结论","lessons":[{"dept":"适用部门名称，通用写全局","text":"40字内可复用经验，写成下次照做的规则"}],"next":["下一轮可迭代的方向，每条30字内，1-3条"]}\nlessons 给 1-3 条。`)
+  const lessons = (out.lessons || []).slice(0, 3).map((l: any) => typeof l === 'string' ? { dept: '全局', text: clip(l, 80) } : { dept: clip(l.dept || '全局', 20), text: clip(l.text, 80) }).filter((l: any) => l.text)
+  return c.json({ ok: true, score: Math.max(0, Math.min(100, Math.round(+out.score || 0))), verdict: ['achieved', 'partial', 'failed'].includes(out.verdict) ? out.verdict : 'partial', summary: clip(out.summary, 120), lessons, next: (out.next || []).slice(0, 3).map((x: any) => clip(x, 60)) })
 })
 
 // ---------- ⑥ 简历解析 ----------
