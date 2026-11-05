@@ -313,3 +313,32 @@ input:focus,textarea:focus,select:focus{border-color:var(--c1);box-shadow:0 0 0 
 .mt{margin-top:12px}.mt2{margin-top:20px}
 .col{display:flex;flex-direction:column;gap:10px}
 @media (max-width:1200px){.hq{grid-template-columns:70px 1fr 0}.hq-side{display:none}.kpis .kpi:nth-child(n+4){display:none}.ind-side{width:320px}}
+
+/* 智能识别行业 */
+.ind-stage{display:flex;flex-direction:column}
+.ind-stage .galaxy-wrap{flex:1;min-height:0}
+.ident-bar{padding:14px 28px 12px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(62,224,255,.06),rgba(6,12,30,.3))}
+.ident-row{display:flex;gap:12px;align-items:center}
+.ident-title{font-weight:800;white-space:nowrap;color:var(--c1)}
+.ident-input{flex:1;position:relative}
+.ident-input i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--c1)}
+.ident-input input{width:100%;padding:13px 14px 13px 40px;font-size:15px;border-color:rgba(62,224,255,.45);box-shadow:0 0 22px rgba(62,224,255,.12)}
+.ident-result{margin-top:10px;min-height:22px}
+.ident-log{font-family:monospace;font-size:12px;color:var(--c1)}
+.ident-cands{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cand{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:12px;border:1px solid var(--line2);background:rgba(20,34,72,.55);text-align:left;transition:.2s}
+.cand:hover{border-color:var(--c1)}
+.cand.on{border-color:var(--c1);background:linear-gradient(90deg,rgba(62,224,255,.2),rgba(139,92,255,.14));box-shadow:0 0 18px rgba(62,224,255,.25)}
+.cand .rk{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;background:rgba(255,255,255,.08)}
+.cand.on .rk{background:var(--c1);color:#051026}
+.cand .cn{display:flex;flex-direction:column;font-size:13px}
+.cand .cn small{font-size:11px;color:var(--dim)}
+.cand .cf{display:flex;align-items:center;gap:6px;font-size:12px}
+.ident-evi{margin-top:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.ident-evi > div{flex-basis:100%}
+.planet.probe .ball{transform:scale(1.35);box-shadow:0 0 40px var(--pc),0 0 0 6px rgba(62,224,255,.3)}
+.planet.probe .lbl{color:#fff}
+.planet.rank1:after,.planet.rank2:after,.planet.rank3:after{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;white-space:nowrap}
+.planet.rank1:after{content:"TOP1";background:var(--c1);color:#051026}
+.planet.rank2:after{content:"TOP2";background:rgba(139,92,255,.85);color:#fff}
+.planet.rank3:after{content:"TOP3";background:rgba(143,163,200,.6);color:#fff}

@@ -30,7 +30,7 @@
     const ok = [null, !!S.industry?.div, !!S.company.profile, S.depts.length >= 2, true][S.step];
     $('#btn-next').disabled = !ok;
     $('#foot-hint').textContent = [null,
-      S.industry?.div ? `已选：${S.industry.name} › ${S.industry.div.code} ${S.industry.div.name}` : '点击星球选择门类，再在右侧选择细分大类（GB/T 4754-2017 · 20门类 97大类）',
+      S.industry?.div ? `已选：${S.industry.name} › ${S.industry.div.code} ${S.industry.div.name}${S.company.profile ? ' · 企业画像已同步生成' : ''}` : '在顶部输入企业名称自动归类，或点击星球手动选择门类与大类（GB/T 4754-2017 · 20门类 97大类）',
       S.company.profile ? `画像置信度 ${S.company.profile.confidence}% · 证据 ${S.company.profile.evidence} 条` : '输入企业名称，启动全网扫描',
       `已部署 ${S.depts.length} 个部门节点 · 拖动节点调整布局`,
       `已录入 ${S.staff.length} 名员工 · 可跳过，后续在总部继续录入`][S.step];
@@ -47,7 +47,16 @@
   function stepIndustry() {
     const body = $('#wiz-body');
     body.innerHTML = `
-    <section class="stage galaxy-wrap">
+    <section class="stage ind-stage">
+     <div class="ident-bar">
+      <div class="ident-row">
+        <div class="ident-title"><i class="fas fa-wand-magic-sparkles"></i> 智能识别行业</div>
+        <div class="ident-input"><i class="fas fa-building"></i><input id="ident-name" placeholder="输入你的企业名称，AI 自动检索企业体系并归类，例如：宁德时代 / 海底捞 / 某某建筑工程有限公司" value="${esc(S.company.name || '')}"></div>
+        <button class="btn btn-pri" id="ident-go"><i class="fas fa-satellite-dish"></i>检索并归类</button>
+      </div>
+      <div class="ident-result" id="ident-result">${S.ident ? '' : '<span class="hint"><i class="fas fa-circle-info"></i> 也可以跳过识别，直接在下方行业星图中手动选择</span>'}</div>
+     </div>
+     <div class="galaxy-wrap">
       <div class="galaxy" id="galaxy"><svg class="orbits" id="orbits"></svg>
         <div class="core" id="core"><div class="inner">${S.industry ? `<div><i class="fas ${S.industry.icon}" style="font-size:22px;color:${S.industry.color}"></i><div style="margin-top:4px">${esc(S.industry.name)}</div></div>` : '<div><i class="fas fa-earth-asia" style="font-size:24px;color:var(--c1)"></i><div style="margin-top:4px">选择你的<br>行业星球</div></div>'}</div></div>
       </div>
@@ -56,6 +65,7 @@
         <div style="position:relative"><i class="fas fa-magnifying-glass" style="position:absolute;left:12px;top:13px;color:var(--dim)"></i><input id="ind-search" placeholder="搜索：如 预制菜 / 光伏 / 灵活用工 / 口腔" style="width:100%;padding-left:34px"></div>
         <div class="div-list" id="div-list"></div>
       </aside>
+     </div>
     </section>`;
     const g = $('#galaxy');
     const place = () => {
@@ -81,6 +91,129 @@
     place(); window.onresize = place;
     renderDivs(S.industry ? INDUSTRIES.find((i) => i.code === S.industry.code) : null);
     $('#ind-search').oninput = (e) => searchInd(e.target.value.trim());
+    $('#ident-go').onclick = identify;
+    $('#ident-name').onkeydown = (e) => e.key === 'Enter' && identify();
+    if (S.ident) renderIdent(S.ident);
+  }
+
+  // ---------- 智能识别：检索企业体系 → 自动归类 ----------
+  async function identify() {
+    const name = $('#ident-name').value.trim();
+    if (!name) return toast('请输入企业名称', 'fa-triangle-exclamation');
+    const btn = $('#ident-go'); btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>检索中…';
+    const res = $('#ident-result');
+    res.innerHTML = `<div class="ident-log" id="ident-log"></div>`;
+    const L = (t) => { const el = $('#ident-log'); if (el) el.innerHTML = `<span><i class="fas fa-angle-right"></i> ${t}</span>`; };
+    $('#core .inner').innerHTML = `<div><i class="fas fa-satellite-dish fa-beat" style="font-size:22px;color:var(--c1)"></i><div style="margin-top:4px;font-size:12px">${esc(name.slice(0, 8))}<br>检索中</div></div>`;
+    L(`锁定企业「${esc(name)}」，正在检索维基百科、公开资讯、主营业务…`);
+    const req = fetch(`/api/scan?name=${encodeURIComponent(name)}`).then((r) => r.json()).catch(() => null);
+    // 遍历行业星球动画
+    const planets = $$('.planet');
+    planets.forEach((p) => p.classList.remove('sel', 'dimmed', 'rank1', 'rank2', 'rank3'));
+    for (let i = 0; i < planets.length; i++) {
+      planets[i].classList.add('probe');
+      L(`遍历行业体系：${INDUSTRIES[i].code} ${INDUSTRIES[i].name}（${INDUSTRIES[i].divisions.length} 个大类）`);
+      await sleep(70);
+      planets[i].classList.remove('probe');
+    }
+    const scan = await req;
+    L('提取企业主营业务关键词，匹配 97 个行业大类…');
+    await sleep(300);
+    const r = classifyCompany(name, scan);
+    S.company.name = name;
+    S.company.scan = scan || { news: [], wiki: null };
+    S.company.profile = null;
+    S.ident = r;
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-satellite-dish"></i>重新识别';
+    if (!r.cands.length) {
+      $('#core .inner').innerHTML = '<div><i class="fas fa-circle-question" style="font-size:22px;color:var(--warn)"></i><div style="margin-top:4px;font-size:12px">未能识别<br>请手动选择</div></div>';
+      res.innerHTML = `<span class="hint" style="color:var(--warn)"><i class="fas fa-triangle-exclamation"></i> 公开信息不足，未能自动归类。请在下方行业星图手动选择，或补充更完整的企业名称（如带“科技/食品/建筑”等字样）。</span>`;
+      saveState(); updateNext(); return;
+    }
+    applyCandidate(r.cands[0], true);
+    renderIdent(r);
+    toast(`已自动归类：${r.cands[0].indName} › ${r.cands[0].divName}`, 'fa-location-crosshairs');
+  }
+
+  function applyCandidate(c, silent) {
+    const ind = INDUSTRIES.find((i) => i.code === c.code);
+    const d = ind.divisions.find((x) => x[0] === c.div);
+    selectCat(ind);
+    S.industry.div = { code: d[0], name: d[1], kw: d[2] };
+    S.company.profile = S.company.scan && S.company.name ? buildProfile(S.company.scan) : null;
+    S.depts = [];
+    renderDivs(ind);
+    saveState(); updateNext();
+    if (!silent) toast(`已切换为：${d[1]}`, 'fa-location-crosshairs');
+    if (S.ident) renderIdent(S.ident);
+  }
+
+  function renderIdent(r) {
+    const res = $('#ident-result'); if (!res) return;
+    // 星球排名标记
+    $$('.planet').forEach((p, i) => { p.classList.remove('rank1', 'rank2', 'rank3'); const k = r.cands.findIndex((c) => c.code === INDUSTRIES[i].code); if (k >= 0 && k < 3) p.classList.add('rank' + (k + 1)); });
+    const cur = S.industry?.div?.code;
+    res.innerHTML = `
+      <div class="ident-cands">
+        <span class="dim" style="font-size:12px;white-space:nowrap"><i class="fas fa-ranking-star"></i> 归类结果</span>
+        ${r.cands.slice(0, 3).map((c, i) => `<button class="cand ${cur === c.div ? 'on' : ''}" data-i="${i}">
+          <span class="rk">${i + 1}</span>
+          <span class="cn"><b>${c.code}${c.div} ${esc(c.divName)}</b><small>${esc(c.indName)}</small></span>
+          <span class="cf"><span class="bar" style="width:70px"><i style="width:${c.conf}%"></i></span><b>${c.conf}%</b></span>
+        </button>`).join('')}
+      </div>
+      <div class="ident-evi"><span class="dim">识别依据：</span>${r.cands[0].hits.slice(0, 8).map((h) => `<span class="tag">${esc(h)}</span>`).join('')}
+        <span class="dim" style="margin-left:6px">· 来源：${r.sources.join(' / ') || '企业名称语义'}</span>
+        ${r.summary ? `<div class="dim" style="margin-top:6px;font-size:11px;line-height:1.5">${esc(r.summary)}</div>` : ''}</div>`;
+    $$('.cand', res).forEach((b) => b.onclick = () => applyCandidate(r.cands[+b.dataset.i]));
+  }
+
+  // 行业归类打分：企业名称（高权重）+ 百科 + 公开资讯，匹配大类名称/细分关键词/常见同义词
+  const EXTRA_KW = {
+    '01': '种植 农场 果业 茶业 蔬菜 农业科技', '03': '养殖 牧业 畜牧 禽业 生猪 奶牛', '04': '水产 渔业', '06': '煤业 煤矿 煤炭', '07': '石油 油田 天然气',
+    '09': '矿业 铜业 稀土 锂业', '13': '粮油 饲料 屠宰 肉业 米业', '14': '食品 乳业 乳品 零食 调味 预制菜 烘焙', '15': '酒业 白酒 啤酒 饮料 饮品 茶业 酒厂 酿酒',
+    '17': '纺织 棉纺 家纺', '18': '服饰 服装 制衣 女装 男装', '19': '鞋业 皮革 箱包', '21': '家具 家居 橱柜 定制家居', '22': '纸业 造纸 包装',
+    '23': '印刷 印务', '26': '化工 化学 涂料 化妆品 日化 农药 化肥', '27': '药业 制药 医药 生物医药 药品 疫苗 中药', '29': '塑料 塑胶 橡胶 轮胎',
+    '30': '水泥 玻璃 陶瓷 建材 石材', '31': '钢铁 特钢 钢材', '32': '铝业 铜材 有色金属', '33': '五金 金属制品 不锈钢', '34': '机械 机床 重工 轴承 泵业 阀门 机器人',
+    '35': '装备 医疗器械 环保设备 专用设备 农机', '36': '汽车 整车 汽配 汽车零部件 新能源汽车 电动汽车', '37': '船舶 航空 航天 飞机 轨道交通 无人机 摩托车 电动车',
+    '38': '电气 电器 电池 储能 光伏 新能源 电缆 家电 照明 动力电池 锂电池 太阳能 逆变器', '39': '电子 半导体 芯片 集成电路 通信设备 手机 智能手机 计算机 服务器 显示 终端 消费电子 ICT',
+    '40': '仪器 仪表 传感器', '44': '电力 发电 电网 能源 热电 风电', '45': '燃气 天然气', '46': '水务 自来水 污水',
+    '47': '建设 建工 建筑 房建 施工', '48': '路桥 交通建设 市政 水利工程 隧道 桥梁 基建', '49': '安装 机电安装 消防', '50': '装饰 装修 幕墙 园林',
+    '51': '贸易 商贸 进出口 供应链 批发 国际贸易', '52': '超市 商店 百货 零售 便利店 电商 商城 药房 连锁', '54': '运输 物流 货运 客运 出行 公交 网约车',
+    '55': '航运 海运 港口', '56': '航空公司 航空 机场', '58': '货代 国际物流 报关', '59': '仓储 冷链 仓库', '60': '快递 速运 速递 邮政',
+    '61': '酒店 宾馆 民宿', '62': '餐饮 火锅 餐厅 茶饮 咖啡 快餐 烧烤 奶茶 外卖', '63': '电信 移动 联通 宽带 广电', '64': '互联网 网络平台 社交 搜索引擎 游戏 视频平台 直播 云计算 电商平台',
+    '65': '软件 信息技术 信息科技 网络科技 数据 人工智能 SaaS 系统集成 IT 数字科技 智能科技', '66': '银行 农商行 信用社 小贷', '67': '证券 基金 期货 投资 资本 资产管理 创投',
+    '68': '保险 人寿 财险', '69': '支付 金融科技 融资租赁 担保', '70': '地产 置业 房地产 物业 不动产 置地', '71': '租赁', '72': '咨询 管理咨询 人力资源 劳务 广告 会展 律师 会计师 税务师 策划 营销 外包 灵活用工 企业服务',
+    '73': '研究院 研究所 实验室', '74': '检测 认证 设计院 勘察 测绘 工程设计', '75': '孵化器 技术转移 科技服务', '77': '环保 环境 固废 节能',
+    '78': '环卫 园林绿化 景区', '80': '家政 养老 托育 美容 美发 婚庆 摄影', '81': '维修 汽修', '83': '教育 培训 学校 学院 大学 幼儿园 学堂 教育科技',
+    '84': '医院 诊所 口腔 医疗 体检 医美 健康管理', '86': '出版 报社 新闻', '87': '影视 传媒 文化传媒 影业 动画 娱乐 MCN 短视频', '88': '文化艺术 艺术团 博物馆',
+    '89': '体育 健身 运动 俱乐部 电竞', '90': '游乐 主题乐园 KTV 剧本杀 文旅'
+  };
+  function classifyCompany(name, scan) {
+    const short = name.replace(/(股份有限公司|有限责任公司|有限公司|集团|公司|\(.*?\)|（.*?）)/g, '');
+    const wikiTxt = scan?.wiki ? scan.wiki.title + ' ' + scan.wiki.extract : '';
+    const newsTxt = (scan?.news || []).map((n) => n.title + ' ' + n.desc).join(' ');
+    const srcs = []; if (scan?.wiki) srcs.push('维基百科'); if (scan?.news?.length) srcs.push(`公开资讯 ${scan.news.length} 条`);
+    const cnt = (txt, w) => { if (!txt || !w) return 0; let n = 0, i = 0; while ((i = txt.indexOf(w, i)) !== -1) { n++; i += w.length; } return n; };
+    const scores = [];
+    INDUSTRIES.forEach((ind) => ind.divisions.forEach((d) => {
+      const words = new Set([...d[2].split(' '), ...(EXTRA_KW[d[0]] || '').split(' '), d[1].replace(/业$|制造业$|服务$/, '')].filter((w) => w && w.length >= 2));
+      let s = 0; const hits = [];
+      words.forEach((w) => {
+        const a = cnt(short, w) * 12, b = Math.min(cnt(wikiTxt, w), 5) * 3, c = Math.min(cnt(newsTxt, w), 6) * 1.2;
+        const v = a + b + c; if (v > 0) { s += v + (w.length >= 3 ? 1 : 0); hits.push(w); }
+      });
+      if (s > 0) scores.push({ code: ind.code, indName: ind.name, div: d[0], divName: d[1], score: s, hits });
+    }));
+    scores.sort((a, b) => b.score - a.score);
+    const top = scores.slice(0, 3);
+    const total = top.reduce((x, y) => x + y.score, 0) || 1;
+    const evidence = (scan?.wiki ? 2 : 0) + Math.min(scan?.news?.length || 0, 6) * .5;
+    top.forEach((c, i) => { const share = c.score / total; c.conf = Math.round(Math.min(96, (i === 0 ? 45 : 15) + share * 40 + evidence * 2 + Math.min(c.score, 30) / 2)); });
+    // 保证排序后的置信度单调递减
+    for (let i = 1; i < top.length; i++) top[i].conf = Math.min(top[i].conf, top[i - 1].conf - 6);
+    const summary = scan?.wiki ? scan.wiki.extract.slice(0, 120) + '…' : (scan?.news?.[0]?.desc || '').slice(0, 120);
+    return { name, cands: top.filter((c) => c.conf > 0), sources: srcs, summary };
   }
   function selectCat(ind) {
     S.industry = { code: ind.code, name: ind.name, icon: ind.icon, color: ind.color, div: null };
@@ -99,7 +232,8 @@
       if (S.industry?.code !== ind.code) selectCat(ind);
       S.industry.div = { code: d[0], name: d[1], kw: d[2] };
       $$('.div-item').forEach((x) => x.classList.remove('sel')); el.classList.add('sel');
-      S.company.profile = null; S.depts = []; saveState(); updateNext();
+      S.company.profile = (S.company.scan && S.company.name) ? buildProfile(S.company.scan) : null; S.depts = []; saveState(); updateNext();
+      if (S.ident) renderIdent(S.ident);
       toast(`已锁定行业：${d[1]}`, 'fa-location-crosshairs');
     });
   }
