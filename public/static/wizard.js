@@ -2,6 +2,8 @@
 (function () {
   const STEPS = ['选择行业', '企业扫描', '部署布局', '录入人员'];
 
+  // 仅在真正按下回车时触发；中文输入法选词（isComposing / keyCode 229）时按回车不触发，其它按键一律放行
+  const isEnter = (e) => e.key === 'Enter' && !e.isComposing && e.keyCode !== 229;
   window.renderWizard = function () {
     const app = $('#app');
     app.innerHTML = `
@@ -92,7 +94,7 @@
     renderDivs(S.industry ? INDUSTRIES.find((i) => i.code === S.industry.code) : null);
     $('#ind-search').oninput = (e) => searchInd(e.target.value.trim());
     $('#ident-go').onclick = identify;
-    $('#ident-name').onkeydown = (e) => e.key === 'Enter' && identify();
+    $('#ident-name').addEventListener('keydown', (e) => { if (isEnter(e)) { e.preventDefault(); identify(); } });
     if (S.ident) renderIdent(S.ident);
   }
 
@@ -283,7 +285,7 @@
       <div class="report" id="report"></div>
     </section>`;
     $('#btn-scan').onclick = doScan;
-    $('#co-name').onkeydown = (e) => e.key === 'Enter' && doScan();
+    $('#co-name').addEventListener('keydown', (e) => { if (isEnter(e)) { e.preventDefault(); doScan(); } });
     if (S.company.profile) renderReport(); else $('#report').innerHTML = `<div class="empty-state"><div><i class="fas fa-radar" style="font-size:40px"></i><i class="fas fa-satellite" style="font-size:40px;color:var(--c1)"></i><p class="mt h3">企业体系与价值分析报告</p><p class="hint mt">扫描完成后在此生成：企业定位 · 价值链 · 商业模式画布 · 七域诊断 · 机会与风险</p></div></div>`;
   }
   async function doScan() {

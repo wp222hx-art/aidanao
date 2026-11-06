@@ -74,7 +74,7 @@
     $('#nav-reset').onclick = () => { if (confirm('确定重新创建企业？当前企业数据将清空。')) { stopSim(); resetState(); renderApp(); } };
     const go = () => { const v = $('#cmd').value.trim(); if (!v) return toast('请输入指令'); const r = $('#cmd-routine').checked; $('#cmd').value = ''; $('#cmd-routine').checked = false; window.bossCommand(v, { routine: r }); };
     $('#cmd-go').onclick = go;
-    $('#cmd').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } };
+    $('#cmd').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); go(); } };
     $$('[data-q]').forEach((b) => b.onclick = () => window.bossCommand(b.dataset.q));
     $$('#log-seg button').forEach((b) => b.onclick = () => { logScope = b.dataset.s; renderFeed(); });
     $('#cmdq').onclick = (e) => {
