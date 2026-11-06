@@ -24,8 +24,8 @@
     { k: 'improve', n: '复盘提升', who: '知识库', i: 'fa-arrow-trend-up' }
   ];
   window.FLOW_STAGES = STAGES;
-  const CMD_COLORS = ['#3ee0ff', '#ffd54f', '#ff4fa3', '#3ddc97', '#b69bff', '#ff9f43', '#4fc3f7', '#f06292'];
-  const SRC = { boss: ['老板', '#ffd54f'], routine: ['例行', '#3ddc97'], iterate: ['迭代', '#b69bff'], lead: ['商机', '#3ee0ff'] };
+  const CMD_COLORS = ['#2563eb', '#d97706', '#db2777', '#059669', '#7c3aed', '#ea580c', '#0891b2', '#be185d'];
+  const SRC = { boss: ['老板', '#d97706'], routine: ['例行', '#059669'], iterate: ['迭代', '#7c3aed'], lead: ['商机', '#2563eb'] };
   window.FLOW_SRC = SRC;
   const LEAD_RE = /线索|商机|采购需求|找订单|招标/;
   const RESEARCH_RE = /线索|商机|竞品|竞争|市场|比价|行业|情报|法规|政策|招聘|供应商|价格|对标|客户画像|专利|标准/;
@@ -51,20 +51,20 @@
   window.simTime = () => { const m = S.sim.min; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
   const stamp = () => `D${S.sim.day} ${simTime()}`;
   F.init = function () {
-    if (S.sim && S.sim.ver === 2) return;
+    if (S.sim && S.sim.ver === 3) return;
     const old = S.sim || {};
     S.sim = {
-      ver: 2, day: old.day || 1, min: DAY_START, speed: old.speed ?? 1, seq: 0,
+      ver: 3, day: old.day || 1, min: DAY_START, speed: old.speed ?? 1, seq: 0,
       commands: [], tasks: [], approvals: [], leads: old.leads || [], contents: old.contents || [], feed: [], knowledge: (old.knowledge || []).filter((k) => k.cmdId), cp: {}, routines: [],
       settings: { planConfirm: true },
       metrics: { done: 0, rework: 0, verify: 0, first: 0, pass1: 0, leads: old.metrics?.leads || 0, pipeline: old.metrics?.pipeline || 0, revenue: 0, hours: 0, saved: 0, esc: 0, contents: old.metrics?.contents || 0, views: old.metrics?.views || 0, promoted: 0, demoted: 0, iterations: 0, approvals: 0, rejects: 0, accepted: 0 },
       history: [], today: { done: 0, leads: 0, pipeline: 0, hours: 0, verify: 0 }, brief: old.brief || null, real: { done: 0, rework: 0, review: 0, leads: 0 }
     };
     S.agents.forEach((a) => { if (!a.sub) a.level = 'L2'; a.status = 'idle'; a.streak = 0; });
-    log(null, 'sys', `企业智脑上线 · ${S.agents.length} 个 Agent 待命 —— 所有工作从老板指令开始`, '#3ee0ff');
+    log(null, 'sys', `企业智脑上线 · ${S.agents.length} 个 Agent 待命 —— 所有工作从老板指令开始`, '#2563eb');
   };
 
-  function log(cmdId, type, html, color = '#8fa3c8') {
+  function log(cmdId, type, html, color = '#64748b') {
     const c = cmdId ? cmdOf(cmdId) : null;
     const e = { t: stamp(), type, html, color, cmd: cmdId || null, no: c?.no || null };
     S.sim.feed.unshift(e); if (S.sim.feed.length > 200) S.sim.feed.length = 200;
@@ -94,10 +94,10 @@
     if (S.sim.commands.length > 40) { const drop = S.sim.commands.slice(40).filter((x) => ['done', 'cancelled'].includes(x.stage)).map((x) => x.id); S.sim.commands = S.sim.commands.filter((x) => !drop.includes(x.id)); S.sim.tasks = S.sim.tasks.filter((t) => !drop.includes(t.cmdId)); }
     if (opt.routine && !S.sim.routines.some((r) => r.text === text)) S.sim.routines.push({ id: uid('r'), text, since: S.sim.day, lastDay: S.sim.day });
     const [sl] = SRC[c.source] || SRC.boss;
-    log(c.id, 'issue', `👑 <b>#${no}</b> ${sl}指令下达「${esc(text)}」${c.iteration > 1 ? ` · 第 ${c.iteration} 轮` : ''}${opt.routine ? ' · 已设为每日例行' : ''}`, '#ffd54f');
+    log(c.id, 'issue', `👑 <b>#${no}</b> ${sl}指令下达「${esc(text)}」${c.iteration > 1 ? ` · 第 ${c.iteration} 轮` : ''}${opt.routine ? ' · 已设为每日例行' : ''}`, '#d97706');
     F.focus = c.id;
     say('boss', text.slice(0, 14));
-    fx('boss', 'brain', '指令', '#ffd54f');
+    fx('boss', 'brain', '指令', '#d97706');
     plan(c);
     saveState(); refresh();
     return c;
@@ -112,11 +112,12 @@
     { re: /招聘|人才|培训|团队/, libs: ['hr', 'admin'], titles: { hr: '制定岗位画像并筛选简历', admin: '安排面试与入职流程' }, appr: [] },
     { re: /质量|客诉|良率/, libs: ['quality', 'production', 'service'], titles: { quality: '汇总质检异常并归因', production: '分析良率波动原因', service: '回访客诉并给出补救方案' }, appr: [] }
   ];
+  const DELIV = { sales: '商机清单与跟进优先级表', marketing: '投放实验方案与预算测算表', product: '竞品对比表与需求差距清单', strategy: '90天增长计划（含ROI测算）', procurement: '供应商比价表与降本建议', finance: '预算偏差分析表', production: '工时损耗核算表', brand: '海报文案与短视频脚本', hr: '岗位画像与筛选标准', legal: '条款风险审查清单', quality: '异常归因分析表', service: '客诉补救方案' };
   function localPlan(c) {
     let hit = CMD_MAP.filter((m) => m.re.test(c.text));
     if (!hit.length) hit = [{ libs: ['strategy', 'operation', 'sales'], titles: {}, appr: [] }];
     const plan = [];
-    hit.forEach((h) => h.libs.forEach((lib) => { const d = deptByLib(lib); if (!d || plan.some((p) => p.deptId === d.id)) return; const title = h.titles[lib] || `落实：${c.text.slice(0, 16)}`; plan.push({ deptId: d.id, title, deliverable: '可直接使用的工作成果', sla: 240, needApproval: h.appr.includes(lib), kind: lib === 'sales' && LEAD_RE.test(title) ? 'leads' : null }); }));
+    hit.forEach((h) => h.libs.forEach((lib) => { const d = deptByLib(lib); if (!d || plan.some((p) => p.deptId === d.id)) return; const title = h.titles[lib] || `落实：${c.text.slice(0, 16)}`; plan.push({ deptId: d.id, title, deliverable: DELIV[lib] || '可直接使用的工作成果', sla: 240, needApproval: h.appr.includes(lib), level: /计划|战略|策略|布局/.test(title) || lib === 'strategy' ? 'leader' : /安排|整理|汇总|梳理/.test(title) ? 'std' : 'master', kind: lib === 'sales' && LEAD_RE.test(title) ? 'leads' : null }); }));
     if (!plan.length) plan.push({ deptId: S.depts[0].id, title: c.text.slice(0, 24), deliverable: '工作成果', sla: 240, needApproval: false });
     c.plan = plan.slice(0, 6); c.goal = c.goal || c.text;
   }
@@ -129,7 +130,7 @@
         if (!r.tasks?.length) throw new Error('未拆解出任务');
         c.goal = r.goal || c.text;
         c.plan = r.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null }));
-      } catch (e) { log(c.id, 'plan', `⚠️ AI 拆解失败（${esc(e.message)}），改用本地规则`, '#ff5d6c'); localPlan(c); }
+      } catch (e) { log(c.id, 'plan', `⚠️ AI 拆解失败（${esc(e.message)}），改用本地规则`, '#dc2626'); localPlan(c); }
       if (c.stage !== 'plan') return; // 期间被取消
       afterPlan(c);
     } else { localPlan(c); c.planDue = S.sim.min + rand(15, 25); }
@@ -137,11 +138,11 @@
   function afterPlan(c, direct) {
     c.planDue = null;
     const names = [...new Set(c.plan.map((p) => deptOf(p.deptId)?.name).filter(Boolean))];
-    log(c.id, 'plan', `🧠 智脑拆解 #${c.no}：目标「${esc(c.goal)}」→ ${c.plan.length} 项任务（${esc(names.join('、'))}）${c.plan.some((p) => p.needApproval) ? '，含高风险动作' : ''}`, '#3ee0ff');
+    log(c.id, 'plan', `🧠 智脑拆解 #${c.no}：目标「${esc(c.goal)}」→ ${c.plan.length} 项任务（${esc(names.join('、'))}）${c.plan.some((p) => p.needApproval) ? '，含高风险动作' : ''}`, '#2563eb');
     if (!direct && S.sim.settings.planConfirm && c.source !== 'routine') {
       c.stage = 'confirm';
       addApproval({ kind: 'plan', cmdId: c.id, action: '方案确认', desc: `#${c.no}「${c.text.slice(0, 30)}」拆解为 ${c.plan.length} 项：${c.plan.map((p) => `${deptOf(p.deptId)?.name}·${p.title}${p.needApproval ? '(高风险)' : ''}`).join('；')}` });
-      fx('brain', 'boss', '方案待确认', '#ffb547');
+      fx('brain', 'boss', '方案待确认', '#d97706');
     } else { c.confirm = direct ? 'direct' : 'skip'; dispatch(c); }
     saveState(); refresh();
   }
@@ -150,7 +151,7 @@
   function dispatch(c) {
     c.stage = 'run';
     c.plan.forEach((p, i) => {
-      const t = createTask(p.deptId, p.title, { cmdId: c.id, deliverable: p.deliverable, sla: p.sla, needApproval: p.needApproval, kind: p.kind, ref: p.ref, kws: p.kws });
+      const t = createTask(p.deptId, p.title, { cmdId: c.id, deliverable: p.deliverable, sla: p.sla, needApproval: p.needApproval, kind: p.kind, ref: p.ref, kws: p.kws, level: p.level });
       if (t) { c.taskIds.push(t.id); setTimeout(() => fx('brain', p.deptId, '分发', c.color), i * 220); }
     });
     log(c.id, 'dispatch', `📤 #${c.no} 分发至 ${new Set(c.plan.map((p) => p.deptId)).size} 个部门 Agent 集群，共 ${c.taskIds.length} 项任务`, c.color);
@@ -164,16 +165,64 @@
     const ag = [...pool].sort((a, b) => load(a) - load(b) || (lvl[b.level] || 0) - (lvl[a.level] || 0))[0];
     const staff = S.staff.filter((s) => s.deptId === deptId);
     const c = cmdOf(opt.cmdId);
+    const level = TIERS[opt.level] ? opt.level : 'master', need = TIER_ORDER.indexOf(level);
+    const rk = (s) => TIER_ORDER.indexOf(tierOf(s));
+    const owner = F.pickOwner(deptId, level);
+    const tier = owner ? tierOf(owner) : level;
     const t = {
-      id: uid('t'), cmdId: opt.cmdId || null, deptId, title, agentId: ag?.id, ownerId: staff.length ? [...staff].sort((a, b) => b.value - a.value)[0].id : null,
+      id: uid('t'), cmdId: opt.cmdId || null, deptId, title, agentId: ag?.id, ownerId: owner?.id || null,
       status: 'queued', progress: 0, sla: opt.sla || 240, age: 0, day: S.sim.day, esc: 0, stuck: false, evals: null, rework: 0,
       real: !!(c ? c.real && isReal() : isReal()), deliverable: opt.deliverable || '', needApproval: !!opt.needApproval, kind: opt.kind || null, ref: opt.ref || null, kws: opt.kws || null,
-      output: null, history: [], feedback: ''
+      output: null, history: [], feedback: '',
+      level, tier, gap: !!owner && rk(owner) < need, tools: owner ? staffTools(owner) : TIERS[tier].tools.slice(), trace: [], criteria: [], accept: null, step: null, evidence: null, images: []
     };
     S.sim.tasks.unshift(t);
     return t;
   }
   window.createTask = createTask;
+  // 按能力级别匹配负责人：优先「刚好达标且最空闲」的人，避免领袖级被琐事占满；无人达标时选部门最高级别并标记能力缺口
+  F.pickOwner = function (deptId, level) {
+    const staff = S.staff.filter((s) => s.deptId === deptId); if (!staff.length) return null;
+    const need = TIER_ORDER.indexOf(TIERS[level] ? level : 'master'), rk = (s) => TIER_ORDER.indexOf(tierOf(s));
+    const busyOf = (s) => S.sim.tasks.filter((t) => t.ownerId === s.id && !['done', 'rejected'].includes(t.status)).length;
+    const fit = staff.filter((s) => rk(s) >= need);
+    return (fit.length ? fit : staff).slice().sort((a, b) => busyOf(a) - busyOf(b) || (fit.length ? rk(a) - rk(b) : rk(b) - rk(a)) || b.value - a.value)[0];
+  };
+
+  // ====================== 执行表（痕迹） ======================
+  const STEP_N = { plan: '规划', tool: '调用工具', write: '撰写成果', accept: '独立验收', approve: '审批', deliver: '交付' };
+  window.TRACE_STEP = STEP_N;
+  const ownerOf = (t) => S.staff.find((x) => x.id === t.ownerId);
+  function trace(t, step, o = {}) {
+    t.trace = t.trace || [];
+    const e = { id: uid('x'), step, v: (t.history?.length || 0) + 1, at: stamp(), ts: Date.now(), status: 'ok', ...o };
+    t.trace.push(e); if (t.trace.length > 40) t.trace.shift();
+    if (e.status !== 'run') logTrace(t, e);
+    refresh(); return e;
+  }
+  function traceOk(t, e, o = {}) { Object.assign(e, { status: 'ok' }, o); logTrace(t, e); refresh(); }
+  function traceFail(t, e, msg) { e.status = 'fail'; e.detail = msg; refresh(); }
+  function logTrace(t, e) {
+    if (!['tool', 'accept', 'plan'].includes(e.step)) return;
+    const o = ownerOf(t), who = `${esc(o?.name || deptOf(t.deptId)?.name || '')}<span class="tz">${TIERS[t.tier]?.short || ''}</span>`;
+    const what = e.step === 'tool' ? `调用「${toolMeta(e.tool).name}」` : e.step === 'plan' ? '完成执行规划' : '独立验收';
+    log(t.cmdId, 'trace', `🔧 ${who} ${what}：${esc(String(e.detail || '').slice(0, 60))}`, e.step === 'accept' ? (t.accept?.pass ? '#059669' : '#d97706') : '#0284c7');
+  }
+  F.trace = trace;
+  // 仿真模式下的执行痕迹（结构与真实一致，明确标注仿真）
+  const FRAME = { std: '清单式执行：动作/负责人/时间/产出', master: '销售漏斗 + 4P 分析 + 双方案测算对比', leader: 'SCQA + 三方案对比 + ROI 测算 + 风险矩阵 + 30/60/90 里程碑' };
+  function simCriteria(t) {
+    const n = { std: 3, master: 4, leader: 5 }[t.tier] || 3;
+    const pool = [`交付「${t.deliverable || t.title}」1 份，结构完整`, '每条行动写明负责岗位与完成时间', '关键数据注明来源或估算口径', '包含 1 张数据测算/对比表', '给出 2 个以上可选方案并说明取舍', '列出风险与对冲动作至少 3 条', '30/60/90 天里程碑含量化目标'];
+    return pool.slice(0, n);
+  }
+  function simTrace(t) {
+    const T = TIERS[t.tier] || TIERS.std, v = (t.history?.length || 0) + 1, has = (st, x) => t.trace.some((e) => e.step === st && e.v === v && (!x || e.tool === x));
+    if (!t.trace.length) { t.criteria = simCriteria(t); trace(t, 'plan', { title: `${T.name}规划`, detail: `框架：${FRAME[t.tier]}`, extra: { criteria: t.criteria }, sim: true }); }
+    if (v === 1 && t.progress >= 25 && !has('tool')) t.tools.filter((x) => !['crawl', 'image', 'doc'].includes(x)).slice(0, T.calls).forEach((x) => trace(t, 'tool', { tool: x, detail: `（仿真）${toolMeta(x).name}「${t.title.slice(0, 12)}」→ ${rand(4, 10)} 条结果`, sim: true }));
+    if (v === 1 && t.progress >= 45 && t.tools.includes('crawl') && !has('tool', 'crawl')) trace(t, 'tool', { tool: 'crawl', detail: `（仿真）深读 ${Math.min(2, T.calls)} 个网页`, sim: true });
+    if (t.progress >= 70 && !has('write')) trace(t, 'write', { detail: `（仿真）${T.model} 撰写${v > 1 ? '修订版' : '成果'}`, sim: true });
+  }
 
   // ====================== ⑤ 执行 ======================
   // 仿真推进（未连接 Genspark 时）
@@ -192,51 +241,97 @@
         if (t.status === 'rework') t.status = 'exec';
         if (!t.stuck && Math.random() < .01) { t.stuck = true; say(t.agentId, '缺数据，卡住了', 'warn'); }
         if (!t.stuck) t.progress = Math.min(100, t.progress + rand(5, 12));
-        if (t.progress >= 100) { t.status = 'verify'; t.verifyDue = S.sim.min + 10; if (a) a.status = 'verify'; fx(t.deptId, 'qa', '提交校验', '#ffb547'); }
+        simTrace(t);
+        if (t.progress >= 100) { t.status = 'verify'; t.verifyDue = S.sim.min + 10; if (a) a.status = 'verify'; fx(t.deptId, 'qa', '提交校验', '#d97706'); }
       } else if (t.status === 'verify' && S.sim.min >= t.verifyDue) {
         const ev = simEval(t);
-        t.output = t.output || `【仿真成果】${t.title}：已按交付物要求完成（仿真模式，无真实内容）。`;
+        t.output = `> 仿真模式：未连接 Genspark，以下为流程演示，不含真实内容。\n\n## 结论\n「${t.title}」按${TIERS[t.tier].name}标准完成（仿真）。\n\n## 验收对照\n${(t.criteria || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}`;
+        t.accept = ev; trace(t, 'accept', { detail: `（仿真）${ev.met}/${ev.items.length} 条达标 · ${ev.total} 分（门槛 ${ev.threshold}）`, extra: { items: ev.items }, sim: true });
         applyVerdict(t, ev);
       }
     });
   };
   function simEval(t) {
     const a = agentOf(t.agentId) || { evals: { acc: 85, evi: 80, time: 85, comp: 90, val: 75 } };
-    const ev = {}; EVAL_DIMS.forEach((d) => { ev[d.k] = Math.max(40, Math.min(100, a.evals[d.k] + rand(-14, 8) + (t.rework ? 7 : 0))); });
+    const bonus = { std: -3, master: 3, leader: 6 }[t.tier] || 0, gap = t.gap ? -9 : 0;
+    const ev = {}; EVAL_DIMS.forEach((d) => { ev[d.k] = Math.max(40, Math.min(100, a.evals[d.k] + rand(-12, 8) + bonus + gap + (t.rework ? 8 : 0))); });
     if (t.age > t.sla) ev.time = Math.max(40, ev.time - 15);
     const total = Math.round(EVAL_DIMS.reduce((s, d) => s + ev[d.k] * d.w, 0) / 100);
-    return { ev, total, feedback: total >= 80 ? pick(['结论清晰、步骤可执行', '数据完整、责任到人', '方案务实、风险提示到位']) : pick(['补充数据来源与测算依据', '明确责任人与时间节点', '细化执行步骤并量化目标', '补充风险与合规提示']) };
+    const th = TIERS[t.tier]?.pass || 80, ok = total >= th;
+    const items = (t.criteria || []).map((text, i) => ({ text, status: ok ? (i === 1 && total < th + 4 ? 'partial' : 'met') : (i === 0 ? 'miss' : i === 1 ? 'partial' : 'met'), evidence: '（仿真）', note: '' }));
+    const met = items.filter((x) => x.status === 'met').length, partial = items.filter((x) => x.status === 'partial').length;
+    return { ev, total, pass: ok, threshold: th, items, met, partial, miss: items.length - met - partial, feedback: ok ? pick(['结论清晰、步骤可执行', '数据完整、责任到人', '方案务实、风险提示到位']) : pick(['补充数据来源与测算依据', '明确责任人与时间节点', '细化执行步骤并量化目标', '补充风险与合规提示']) + (t.gap ? `（该任务需${TIERS[t.level].name}能力，当前执行人为${TIERS[t.tier].name}）` : '') };
   }
   // 真实执行（Genspark）
   async function runReal(t) {
     F.running.add(t.id);
-    const c = cmdOf(t.cmdId), d = deptOf(t.deptId), a = agentOf(t.agentId);
+    const c = cmdOf(t.cmdId), d = deptOf(t.deptId), a = agentOf(t.agentId), o = ownerOf(t), T = TIERS[t.tier] || TIERS.std;
     const wasRework = t.status === 'rework';
-    t.status = 'exec'; t.stuck = false; t.error = '';
+    t.status = 'exec'; t.stuck = false; t.error = ''; t.trace = t.trace || [];
     if (a) a.status = 'busy';
-    say(t.agentId, wasRework ? '按意见返工中…' : '调用 Genspark 执行…', 'ai');
-    const anim = setInterval(() => { if (t.status === 'exec' && t.progress < 90) t.progress = Math.min(90, t.progress + rand(3, 8)); }, 900);
+    say(t.agentId, wasRework ? '按验收意见返工…' : `${T.short}级执行中…`, 'ai');
+    const base = { ...ctxBase(), goal: c?.goal || '', dept: d?.name, pos: o?.pos || '', owner: o?.name || '', agent: a?.name, task: t.title, deliverable: t.deliverable, tier: t.tier, tools: t.tools, knowledge: knowledgeFor(t.deptId) };
+    let cur = null;
     try {
-      let output, researched = false;
-      if (t.kind === 'leads') { const r = await leadTask(t); output = r.output; researched = true; }
-      else {
-        const r = await AI.call('/execute', { ...ctxBase(), goal: c?.goal || '', dept: d?.name, agent: a?.name, task: t.title, deliverable: t.deliverable, research: RESEARCH_RE.test(t.title), feedback: wasRework ? t.feedback : '', previous: wasRework ? t.output : '', knowledge: knowledgeFor(t.deptId), evaluate: false });
-        output = r.output; researched = r.researched;
+      // ① 规划：验收标准 + 工具组合
+      if (!t.plan) {
+        t.step = 'plan'; t.progress = 6;
+        cur = trace(t, 'plan', { status: 'run', title: `${T.name}规划`, detail: `${T.model} 拆解验收标准与工具调用` });
+        const p = await AI.call('/task/plan', base);
+        if (t.status === 'rejected') return;
+        t.plan = p; t.criteria = p.criteria;
+        traceOk(t, cur, { detail: `框架：${p.framework}`, model: p.model, extra: { understanding: p.understanding, criteria: p.criteria, calls: p.calls, outline: p.outline }, ms: Date.now() - cur.ts });
       }
+      // ② 调用决策调用库（Genspark 工具）
+      if (!t.evidence) {
+        t.step = 'tool'; const ev = [], imgs = [], seen = new Set();
+        const add = (x) => { if (x?.url && !seen.has(x.url)) { seen.add(x.url); ev.push(x); } };
+        const calls = t.plan.calls || [];
+        for (let i = 0; i < calls.length; i++) {
+          const k = calls[i];
+          cur = trace(t, 'tool', { status: 'run', tool: k.tool, detail: k.query || (k.queries || []).join(' / ') });
+          try {
+            const r = await AI.call('/task/tool', { tier: t.tier, tools: t.tools, ...k });
+            r.sources.forEach(add); imgs.push(...(r.images || []));
+            traceOk(t, cur, { detail: `${r.summary}${k.why ? ' · ' + k.why : ''}`, sources: r.sources.slice(0, 6).map((x) => ({ title: x.title, url: x.url, snippet: String(x.snippet || '').slice(0, 140) })), images: r.images, ms: r.ms });
+          } catch (e) { traceFail(t, cur, e.message); }
+          t.progress = 10 + Math.round((i + 1) / Math.max(1, calls.length) * 30);
+          if (t.status === 'rejected') return;
+        }
+        const reads = ev.filter((x) => !/\.pdf($|\?)/i.test(x.url) && !x.text).slice(0, t.plan.read || 0);
+        for (const x of reads) {
+          cur = trace(t, 'tool', { status: 'run', tool: 'crawl', detail: x.title });
+          try { const r = await AI.call('/task/tool', { tier: t.tier, tools: t.tools, tool: 'crawl', url: x.url, title: x.title }); x.text = String(r.text || '').slice(0, 2500); traceOk(t, cur, { detail: `${r.summary}：${x.title}`, sources: [{ title: x.title, url: x.url, snippet: String(r.text || '').replace(/\s+/g, ' ').slice(0, 140) }], ms: r.ms }); }
+          catch (e) { traceFail(t, cur, e.message); }
+          if (t.status === 'rejected') return;
+        }
+        t.evidence = [...ev.filter((x) => x.text), ...ev.filter((x) => !x.text)].slice(0, 14); t.images = imgs.slice(0, 3);
+        t.progress = 50;
+      }
+      // ③ 撰写成果
+      t.step = 'write'; t.progress = Math.max(t.progress, 55);
+      cur = trace(t, 'write', { status: 'run', detail: `${T.model} 基于 ${t.evidence.length} 条证据${wasRework ? '按验收意见修订' : '撰写'}` });
+      const anim = setInterval(() => { if (t.step === 'write' && t.progress < 85) t.progress++; }, 2500);
+      let r; try { r = await AI.call('/task/produce', { ...base, framework: t.plan.framework, outline: t.plan.outline, criteria: t.criteria, evidence: t.evidence, images: t.images, feedback: wasRework ? t.feedback : '', previous: wasRework ? t.output : '' }); } finally { clearInterval(anim); }
       if (t.status === 'rejected') return;
-      t.output = output; t.progress = 100;
-      // ⑥ 校验（独立调用：AI 质检官）
-      t.status = 'verify'; if (a) a.status = 'verify';
-      fx(t.deptId, 'qa', '提交校验', '#ffb547'); say(t.agentId, '提交质检…', 'ai');
-      const ev = await AI.call('/evaluate', { ...ctxBase(), dept: d?.name, agent: a?.name, task: t.title, output });
+      t.output = r.output; t.progress = 88;
+      traceOk(t, cur, { chars: r.chars, detail: `成果 ${r.chars} 字 · 引用 ${new Set((r.output.match(/\[(\d+)\]/g) || [])).size} 处来源`, model: r.model, ms: Date.now() - cur.ts });
+      // ④ 独立验收（逐条核对验收标准）
+      t.step = 'accept'; t.status = 'verify'; if (a) a.status = 'verify';
+      fx(t.deptId, 'qa', '提交验收', '#d97706'); say(t.agentId, '提交独立验收…', 'ai');
+      cur = trace(t, 'accept', { status: 'run', detail: `逐条核对 ${t.criteria.length} 条验收标准` });
+      const ac = await AI.call('/task/accept', { ...base, criteria: t.criteria, output: t.output, sources: t.evidence.length });
       if (t.status === 'rejected') return;
-      applyVerdict(t, { ev: ev.evals, total: ev.total, feedback: ev.feedback, researched });
+      t.accept = ac;
+      traceOk(t, cur, { detail: `${ac.met}/${ac.items.length} 条达标${ac.partial ? `、${ac.partial} 条部分` : ''}${ac.miss ? `、${ac.miss} 条未达` : ''} · ${ac.total} 分（门槛 ${ac.threshold}）`, extra: { items: ac.items }, ms: Date.now() - cur.ts });
+      applyVerdict(t, { ev: ac.evals, total: ac.total, feedback: ac.feedback, pass: ac.pass, threshold: ac.threshold, researched: t.evidence.length > 0 });
     } catch (e) {
+      if (cur && cur.status === 'run') traceFail(t, cur, e.message);
       t.status = wasRework ? 'rework' : 'queued'; t.progress = 0; t.stuck = true; t.error = e.message; t.retries = (t.retries || 0) + 1;
       if (a) a.status = 'idle';
-      log(t.cmdId, 'esc', `⚠️ 「${short(t.title)}」执行失败：${esc(e.message)}${t.retries >= 2 ? '（已暂停，可在任务详情重试）' : '，稍后自动重试'}`, '#ff5d6c');
+      log(t.cmdId, 'esc', `⚠️ 「${short(t.title)}」执行失败：${esc(e.message)}${t.retries >= 2 ? '（已暂停，可在任务详情重试）' : '，稍后自动重试'}`, '#dc2626');
       if (t.retries >= 2) t.paused = true;
-    } finally { clearInterval(anim); F.running.delete(t.id); saveState(); refresh(); }
+    } finally { t.step = ['exec', 'rework'].includes(t.status) ? t.step : null; F.running.delete(t.id); saveState(); refresh(); }
   }
   setInterval(() => {
     if (!isReal() || !S.launched || !S.sim || S.sim.speed === 0) return;
@@ -260,25 +355,26 @@
     t.evals = { ev: r.ev, total: r.total }; t.feedback = r.feedback || '';
     t.history.push({ v: t.history.length + 1, output: t.output, evals: r.ev, total: r.total, feedback: t.feedback, at: stamp(), researched: !!r.researched });
     S.sim.metrics.verify++; S.sim.today.verify++;
-    if (t.history.length === 1) { S.sim.metrics.first++; if (r.total >= 80) S.sim.metrics.pass1++; }
+    if (t.history.length === 1) { S.sim.metrics.first++; if (r.pass ?? r.total >= 80) S.sim.metrics.pass1++; }
     if (a) { EVAL_DIMS.forEach((k) => a.evals[k.k] = Math.round(a.evals[k.k] * .8 + r.ev[k.k] * .2)); a.status = 'idle'; }
     const limit = a?.level === 'L3' ? 2 : 1; // L3 Agent 拥有更多自我修正机会
-    if (r.total >= 80) {
-      log(t.cmdId, 'verify', `✅ 校验通过「${short(t.title)}」${r.total} 分 · ${esc(t.feedback.slice(0, 40))}`, '#3ddc97');
-      fx('qa', t.deptId, `通过 ${r.total}`, '#3ddc97');
+    const pass = r.pass ?? r.total >= (r.threshold || TIERS[t.tier]?.pass || 80);
+    if (pass) {
+      log(t.cmdId, 'verify', `✅ 校验通过「${short(t.title)}」${r.total} 分 · ${esc(t.feedback.slice(0, 40))}`, '#059669');
+      fx('qa', t.deptId, `通过 ${r.total}`, '#059669');
       if (t.needApproval) toApproval(t, 'risk');
       else if (a?.level === 'L1') toApproval(t, 'l1');
       else deliver(t);
     } else if (t.rework < limit) {
       t.rework++; t.status = 'rework'; t.progress = 30; S.sim.metrics.rework++; if (a) a.fail++;
       if (t.real) S.sim.real.rework++;
-      log(t.cmdId, 'rework', `↩️ 校验未通过「${short(t.title)}」${r.total} 分 → 返工循环：${esc(t.feedback)}`, '#ff8a65');
-      fx('qa', t.deptId, '返工', '#ff8a65'); say(t.agentId, `${r.total}分，返工`, 'warn');
+      log(t.cmdId, 'rework', `↩️ 校验未通过「${short(t.title)}」${r.total} 分 → 返工循环：${esc(t.feedback)}`, '#ea580c');
+      fx('qa', t.deptId, '返工', '#ea580c'); say(t.agentId, `${r.total}分，返工`, 'warn');
     } else {
       t.status = 'review'; if (t.real) S.sim.real.review++;
       addApproval({ kind: 'review', taskId: t.id, cmdId: t.cmdId, deptId: t.deptId, action: '人工复核', desc: `「${t.title}」返工后仍 ${r.total} 分：${t.feedback}` });
-      log(t.cmdId, 'review', `👤 「${short(t.title)}」返工后仍 ${r.total} 分，升级为老板人工复核`, '#ffb547');
-      fx('qa', 'boss', '人工复核', '#ffb547');
+      log(t.cmdId, 'review', `👤 「${short(t.title)}」返工后仍 ${r.total} 分，升级为老板人工复核`, '#d97706');
+      fx('qa', 'boss', '人工复核', '#d97706');
     }
     saveState(); refresh();
   }
@@ -286,7 +382,7 @@
     t.status = 'approval';
     const action = why === 'l1' ? '建议级 Agent 成果确认' : (/报价|签约|合同/.test(t.title) ? '报价/签约' : /投放|预算|广告/.test(t.title) ? '追加预算/投放' : /发布|宣传|海报|视频|群发/.test(t.title) ? '对外发布' : '高风险动作执行');
     addApproval({ kind: 'result', taskId: t.id, cmdId: t.cmdId, deptId: t.deptId, action, desc: `「${t.title}」已通过校验（${t.evals.total} 分），执行前需老板确认` });
-    fx('qa', 'boss', '待审批', '#ffb547');
+    fx('qa', 'boss', '待审批', '#d97706');
   }
   function deliver(t) {
     if (t.status === 'done') return;
@@ -296,13 +392,13 @@
     const hrs = rand(1, 4); S.sim.metrics.hours += hrs; S.sim.today.hours += hrs;
     if (t.real) S.sim.real.done++;
     if (a) { a.done++; a.status = 'idle'; }
-    log(t.cmdId, 'deliver', `📦 交付「${short(t.title, 24)}」· ${esc(d?.name || '')} · <a class="lnk" onclick="openTaskModal('${t.id}')">查看成果</a>`, '#3ddc97');
-    fx(t.deptId, 'brain', '交付', c?.color || '#3ddc97'); say(t.agentId, '交付 ✓', 'ai');
+    log(t.cmdId, 'deliver', `📦 交付「${short(t.title, 24)}」· ${esc(d?.name || '')} · <a class="lnk" onclick="openTaskModal('${t.id}')">查看成果</a>`, '#059669');
+    fx(t.deptId, 'brain', '交付', c?.color || '#059669'); say(t.agentId, '交付 ✓', 'ai');
     // 阶段联动（仍归属本指令）
     if (d?.lib === 'sales' && t.kind === 'leads' && !t.real) simLeads(t);
     (t.foundLeads || []).forEach((id) => { const L = S.sim.leads.find((x) => x.id === id); if (L && c && L.status === 'new') appendFollowups(c, L); });
     if (d?.lib === 'brand' && /海报|视频|推文|宣传/.test(t.title)) makeContent(t);
-    if (d?.lib === 'procurement' && /比价/.test(t.title) && !t.real) { const v = rand(5000, 30000); S.sim.metrics.saved += v; log(t.cmdId, 'value', `💰 比价测算可节省成本约 ¥${fmtMoney(v)}（仿真）`, '#ffca28'); }
+    if (d?.lib === 'procurement' && /比价/.test(t.title) && !t.real) { const v = rand(5000, 30000); S.sim.metrics.saved += v; log(t.cmdId, 'value', `💰 比价测算可节省成本约 ¥${fmtMoney(v)}（仿真）`, '#ca8a04'); }
     checkCommand(c);
   }
 
@@ -330,8 +426,8 @@
     const items = leadPlan(L);
     if (c.stage !== 'run') c.stage = 'run';
     items.forEach((p) => { c.plan.push(p); const t = createTask(p.deptId, p.title, { cmdId: c.id, deliverable: p.deliverable, needApproval: p.needApproval, ref: p.ref }); if (t) c.taskIds.push(t.id); });
-    if (sales && td) fx(sales.id, td.id, '订单同步', '#3ddc97');
-    log(c.id, 'dispatch', `🔗 A级商机「${short(L.title, 26)}」→ 在 #${c.no} 内追加 ${items.length} 项跟进任务`, '#8b5cff');
+    if (sales && td) fx(sales.id, td.id, '订单同步', '#059669');
+    log(c.id, 'dispatch', `🔗 A级商机「${short(L.title, 26)}」→ 在 #${c.no} 内追加 ${items.length} 项跟进任务`, '#7c3aed');
   }
   function simLeads(t) {
     const kw = (t.kws?.length ? t.kws : (S.industry?.div?.kw || '').split(' ')).filter(Boolean);
@@ -340,7 +436,7 @@
       const g = Math.random(), grade = g < .4 ? 'A' : g < .8 ? 'B' : 'C';
       const L = { id: uid('l'), title: `${pick(['华东', '华南', '西南', '华北', '华中'])}${pick(['某集团', '某国企', '某连锁品牌', '某产业园'])}${pick(['采购', '招标', '询价'])}：${pick(kw) || S.industry?.div?.name}${pick(['项目', '年度框架', '批量采购'])}`, link: '', source: '仿真线索', desc: '', real: false, grade, value: grade === 'A' ? rand(30, 300) * 10000 : rand(5, 60) * 10000, match: grade === 'A' ? rand(85, 96) : rand(55, 84), status: 'new', day: S.sim.day, cmdId: t.cmdId };
       S.sim.leads.unshift(L); S.sim.metrics.leads++; S.sim.today.leads++; if (grade === 'A') ids.push(L.id);
-      log(t.cmdId, 'lead', `🎯 发现 <b>${grade}级</b> 商机（仿真）：${short(L.title, 30)}`, grade === 'A' ? '#3ddc97' : '#3ee0ff');
+      log(t.cmdId, 'lead', `🎯 发现 <b>${grade}级</b> 商机（仿真）：${short(L.title, 30)}`, grade === 'A' ? '#059669' : '#2563eb');
     }
     t.foundLeads = ids.slice(0, 1);
   }
@@ -356,7 +452,7 @@
     const ap = { id: uid('ap'), status: 'pending', day: S.sim.day, t: simTime(), ...o };
     S.sim.approvals.unshift(ap); if (S.sim.approvals.length > 80) S.sim.approvals.length = 80;
     const c = cmdOf(ap.cmdId);
-    log(ap.cmdId, 'approval', `🛡️ ${ap.kind === 'plan' ? '闸门①' : '闸门②'}「${esc(ap.action)}」等待老板审批${c ? ` · #${c.no}` : ''}`, '#ffb547');
+    log(ap.cmdId, 'approval', `🛡️ ${ap.kind === 'plan' ? '闸门①' : '闸门②'}「${esc(ap.action)}」等待老板审批${c ? ` · #${c.no}` : ''}`, '#d97706');
     say('boss', '有新的审批 📝', 'warn');
     window.updateBadges && updateBadges();
     return ap;
@@ -370,18 +466,18 @@
     S.sim.metrics.approvals++; if (!ok) S.sim.metrics.rejects++;
     const c = cmdOf(ap.cmdId), t = taskOf(ap.taskId);
     if (ap.kind === 'plan' && c && c.stage === 'confirm') {
-      if (ok) { c.confirm = 'approved'; log(c.id, 'confirm', `✔ 老板确认 #${c.no} 拆解方案`, '#3ddc97'); fx('boss', 'brain', '方案确认', '#3ddc97'); dispatch(c); }
-      else { c.replans++; c.feedback = `老板驳回上一版方案：${reason || '方案不满意，请重新拆解'}`; log(c.id, 'confirm', `✖ 老板驳回 #${c.no} 方案${reason ? '：' + esc(reason) : ''} → 重新拆解（第 ${c.replans + 1} 版）`, '#ff5d6c'); fx('boss', 'brain', '重新拆解', '#ff5d6c'); plan(c); }
+      if (ok) { c.confirm = 'approved'; log(c.id, 'confirm', `✔ 老板确认 #${c.no} 拆解方案`, '#059669'); fx('boss', 'brain', '方案确认', '#059669'); dispatch(c); }
+      else { c.replans++; c.feedback = `老板驳回上一版方案：${reason || '方案不满意，请重新拆解'}`; log(c.id, 'confirm', `✖ 老板驳回 #${c.no} 方案${reason ? '：' + esc(reason) : ''} → 重新拆解（第 ${c.replans + 1} 版）`, '#dc2626'); fx('boss', 'brain', '重新拆解', '#dc2626'); plan(c); }
     }
     if (ap.kind === 'result' && t && t.status === 'approval') {
-      if (ok) { log(t.cmdId, 'approval', `✔ 老板批准「${short(t.title)}」执行`, '#3ddc97'); fx('boss', t.deptId, '批准', '#3ddc97'); deliver(t); }
-      else { backToRework(t, `老板驳回：${reason || '不同意执行，请调整方案'}`); log(t.cmdId, 'rework', `✖ 老板驳回「${short(t.title)}」${reason ? '：' + esc(reason) : ''} → 返工循环`, '#ff5d6c'); fx('boss', t.deptId, '驳回', '#ff5d6c'); }
+      if (ok) { log(t.cmdId, 'approval', `✔ 老板批准「${short(t.title)}」执行`, '#059669'); fx('boss', t.deptId, '批准', '#059669'); deliver(t); }
+      else { backToRework(t, `老板驳回：${reason || '不同意执行，请调整方案'}`); log(t.cmdId, 'rework', `✖ 老板驳回「${short(t.title)}」${reason ? '：' + esc(reason) : ''} → 返工循环`, '#dc2626'); fx('boss', t.deptId, '驳回', '#dc2626'); }
     }
     if (ap.kind === 'review' && t && t.status === 'review') {
-      if (ok) { t.humanPassed = true; t.evals.total = Math.max(t.evals.total, 80); log(t.cmdId, 'approval', `👤 老板人工复核通过「${short(t.title)}」`, '#3ddc97'); fx('boss', t.deptId, '复核通过', '#3ddc97'); deliver(t); }
-      else { t.rework = 0; backToRework(t, `老板复核意见：${reason || '质量不达标，请重做'}`); log(t.cmdId, 'rework', `👤 老板复核打回「${short(t.title)}」→ 返工循环`, '#ff5d6c'); fx('boss', t.deptId, '打回', '#ff5d6c'); }
+      if (ok) { t.humanPassed = true; t.evals.total = Math.max(t.evals.total, 80); log(t.cmdId, 'approval', `👤 老板人工复核通过「${short(t.title)}」`, '#059669'); fx('boss', t.deptId, '复核通过', '#059669'); deliver(t); }
+      else { t.rework = 0; backToRework(t, `老板复核意见：${reason || '质量不达标，请重做'}`); log(t.cmdId, 'rework', `👤 老板复核打回「${short(t.title)}」→ 返工循环`, '#dc2626'); fx('boss', t.deptId, '打回', '#dc2626'); }
     }
-    if (ap.kind === 'content') { const C = S.sim.contents.find((x) => x.id === ap.contentId || x.id === ap.ref); if (C) { C.status = ok ? 'live' : 'rejected'; log(ap.cmdId, 'approval', ok ? `📣 批准发布「${short(C.title)}」` : `✖ 驳回发布「${short(C.title)}」`, ok ? '#3ddc97' : '#ff5d6c'); } }
+    if (ap.kind === 'content') { const C = S.sim.contents.find((x) => x.id === ap.contentId || x.id === ap.ref); if (C) { C.status = ok ? 'live' : 'rejected'; log(ap.cmdId, 'approval', ok ? `📣 批准发布「${short(C.title)}」` : `✖ 驳回发布「${short(C.title)}」`, ok ? '#059669' : '#dc2626'); } }
     saveState(); refresh(); window.updateBadges && updateBadges();
   };
   function backToRework(t, fb) {
@@ -396,7 +492,7 @@
     if (!t.evals) t.evals = { ev: { acc: 80, evi: 80, time: 80, comp: 80, val: 80 }, total: 80 };
     t.evals.total = Math.max(t.evals.total, 80); t.humanPassed = true;
     resolveTaskApprovals(t, true);
-    log(t.cmdId, 'approval', `👑 老板直接通过「${short(t.title)}」`, '#3ddc97');
+    log(t.cmdId, 'approval', `👑 老板直接通过「${short(t.title)}」`, '#059669');
     deliver(t); saveState(); refresh();
   };
   F.reworkTask = function (t, fb) {
@@ -404,8 +500,8 @@
     if (c && ['accept', 'improve', 'done'].includes(c.stage)) { toast('该指令已进入复盘，请在指令详情中「迭代下一轮」'); return false; }
     resolveTaskApprovals(t, false);
     backToRework(t, `老板意见：${fb}`);
-    log(t.cmdId, 'rework', `👑 老板打回「${short(t.title)}」：${esc(fb)} → 返工循环`, '#ffd54f');
-    fx('boss', t.deptId, '打回', '#ff5d6c'); saveState(); refresh(); return true;
+    log(t.cmdId, 'rework', `👑 老板打回「${short(t.title)}」：${esc(fb)} → 返工循环`, '#d97706');
+    fx('boss', t.deptId, '打回', '#dc2626'); saveState(); refresh(); return true;
   };
   F.retryTask = function (t) { t.paused = false; t.retries = 0; t.stuck = false; t.error = ''; saveState(); refresh(); };
 
@@ -417,14 +513,14 @@
   }
   async function accept(c) {
     c.stage = 'accept';
-    log(c.id, 'accept', `🧾 #${c.no} 全部任务交付，智脑进行指令级验收…`, '#3ee0ff');
-    fx('brain', 'qa', '指令验收', '#3ee0ff');
+    log(c.id, 'accept', `🧾 #${c.no} 全部任务交付，智脑进行指令级验收…`, '#2563eb');
+    fx('brain', 'qa', '指令验收', '#2563eb');
     const ts = c.taskIds.map(taskOf).filter((t) => t && t.status === 'done');
     if (c.real && isReal()) {
       let rv = null;
       try {
         rv = await AI.call('/review', { ...ctxBase(), text: c.text, goal: c.goal, depts: S.depts.map((d) => d.name), results: ts.map((t) => ({ dept: deptOf(t.deptId)?.name, title: t.title, score: t.evals?.total || 0, rework: t.rework, human: !!t.humanPassed, output: String(t.output || '').slice(0, 700) })) });
-      } catch (e) { log(c.id, 'accept', `⚠️ AI 验收失败（${esc(e.message)}），使用规则验收`, '#ff5d6c'); }
+      } catch (e) { log(c.id, 'accept', `⚠️ AI 验收失败（${esc(e.message)}），使用规则验收`, '#dc2626'); }
       if (c.stage !== 'accept') return;
       improve(c, rv || localReview(c));
     } else c.acceptDue = S.sim.min + 15;
@@ -460,8 +556,8 @@
     });
     c.review = { lessons: ls.map((l) => `${l.dept !== '全局' ? '[' + l.dept + '] ' : ''}${l.text}`), next: (rv.next || []).slice(0, 3), promos };
     const vl = { achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict] || c.acceptance.verdict;
-    log(c.id, 'improve', `📈 #${c.no} 复盘提升：验收 <b>${c.acceptance.score}</b> 分（${vl}）· 沉淀经验 ${ls.length} 条${promos.length ? ' · ' + esc(promos.join('、')) : ''} · <a class="lnk" onclick="openCmdModal('${c.id}')">查看复盘</a>`, '#b69bff');
-    fx('brain', 'kb', '经验沉淀', '#b69bff'); setTimeout(() => fx('kb', 'brain', '知识注入', '#b69bff'), 1500);
+    log(c.id, 'improve', `📈 #${c.no} 复盘提升：验收 <b>${c.acceptance.score}</b> 分（${vl}）· 沉淀经验 ${ls.length} 条${promos.length ? ' · ' + esc(promos.join('、')) : ''} · <a class="lnk" onclick="openCmdModal('${c.id}')">查看复盘</a>`, '#7c3aed');
+    fx('brain', 'kb', '经验沉淀', '#7c3aed'); setTimeout(() => fx('kb', 'brain', '知识注入', '#7c3aed'), 1500);
     c.stage = 'done'; c.doneAt = stamp();
     saveState(); refresh();
   }
@@ -479,7 +575,7 @@
     c.stage = 'cancelled';
     c.taskIds.map(taskOf).forEach((t) => { if (t && t.status !== 'done') { t.status = 'rejected'; const a = agentOf(t.agentId); if (a) a.status = 'idle'; } });
     S.sim.approvals.filter((a) => a.cmdId === id && a.status === 'pending').forEach((a) => { a.status = 'rejected'; a.reason = '指令已取消'; });
-    log(c.id, 'cancel', `⏹ 老板取消 #${c.no}`, '#ff5d6c'); saveState(); refresh();
+    log(c.id, 'cancel', `⏹ 老板取消 #${c.no}`, '#dc2626'); saveState(); refresh();
   };
   F.toggleRoutine = function (text, on) {
     if (on) { if (!S.sim.routines.some((r) => r.text === text)) S.sim.routines.push({ id: uid('r'), text, since: S.sim.day, lastDay: S.sim.day }); }
@@ -495,22 +591,22 @@
       S.sim.routines.forEach((r) => {
         if (r.lastDay >= S.sim.day) return; r.lastDay = S.sim.day;
         const last = S.sim.commands.find((c) => F.baseText(c.text) === r.text);
-        if (last && !['done', 'cancelled'].includes(last.stage)) { log(last.id, 'routine', `🔁 例行「${short(r.text)}」上一轮仍在进行，今日不重复下发`, '#3ddc97'); return; }
+        if (last && !['done', 'cancelled'].includes(last.stage)) { log(last.id, 'routine', `🔁 例行「${short(r.text)}」上一轮仍在进行，今日不重复下发`, '#059669'); return; }
         if (last) F.iterate(last.id); else F.issue(r.text, { source: 'routine' });
       });
     }
     if ((cp.k === 'check' || cp.k === 'patrol') && active.length) {
       const over = active.filter((t) => t.age > t.sla || t.stuck || t.paused);
       over.forEach(escalate);
-      log(null, 'cp', `🔎 ${cp.name}：在办 ${active.length} 项，逾期/卡点 ${over.length} 项${over.length ? '，已启动督办' : ''}`, over.length ? '#ffb547' : '#8fa3c8');
+      log(null, 'cp', `🔎 ${cp.name}：在办 ${active.length} 项，逾期/卡点 ${over.length} 项${over.length ? '，已启动督办' : ''}`, over.length ? '#d97706' : '#64748b');
     }
     if (cp.k === 'report') {
       S.agents.forEach((a) => a.score = agentTotal(a));
-      if (S.sim.today.verify || S.sim.today.done) log(null, 'cp', `📊 日终：交付 ${S.sim.today.done} 项 · 校验 ${S.sim.today.verify} 次 · 一次通过率 ${F.passRate()}% · 待审批 ${S.sim.approvals.filter((a) => a.status === 'pending').length} 项`, '#3ee0ff');
+      if (S.sim.today.verify || S.sim.today.done) log(null, 'cp', `📊 日终：交付 ${S.sim.today.done} 项 · 校验 ${S.sim.today.verify} 次 · 一次通过率 ${F.passRate()}% · 待审批 ${S.sim.approvals.filter((a) => a.status === 'pending').length} 项`, '#2563eb');
     }
     if (cp.k === 'learn') {
       const n = S.sim.knowledge.filter((k) => k.day === S.sim.day).length;
-      if (n) log(null, 'cp', `🧠 今日沉淀经验 ${n} 条，已注入后续指令的拆解与执行`, '#b69bff');
+      if (n) log(null, 'cp', `🧠 今日沉淀经验 ${n} 条，已注入后续指令的拆解与执行`, '#7c3aed');
     }
     refresh();
   };
@@ -518,10 +614,10 @@
     t.esc = Math.min(3, t.esc + 1); S.sim.metrics.esc++;
     const owner = S.staff.find((s) => s.id === t.ownerId);
     const lv = ['', '提醒执行 Agent', `通知负责人 ${owner?.name || ''}`, '上报老板'][t.esc];
-    log(t.cmdId, 'esc', `⏰ 督办 L${t.esc}：「${short(t.title)}」${t.stuck || t.paused ? '卡点' : '逾期'} → ${lv}`, t.esc >= 3 ? '#ff5d6c' : '#ffb547');
+    log(t.cmdId, 'esc', `⏰ 督办 L${t.esc}：「${short(t.title)}」${t.stuck || t.paused ? '卡点' : '逾期'} → ${lv}`, t.esc >= 3 ? '#dc2626' : '#d97706');
     if (t.esc === 1) say(t.agentId, '收到督办，加速', 'warn');
     if (t.esc === 2) say(t.ownerId, '我来跟进！', 'warn');
-    if (t.esc >= 3) { fx(t.deptId, 'boss', '督办升级', '#ff5d6c'); say('boss', '这个怎么卡住了？', 'warn'); }
+    if (t.esc >= 3) { fx(t.deptId, 'boss', '督办升级', '#dc2626'); say('boss', '这个怎么卡住了？', 'warn'); }
     if (t.stuck && !t.real) t.stuck = false;
     if (t.paused && t.esc >= 2) { t.paused = false; t.retries = 0; }
     t.sla += 120;
@@ -529,7 +625,7 @@
   F.newDay = function () {
     const sim = S.sim;
     sim.history.push({ day: sim.day, ...sim.today }); if (sim.history.length > 30) sim.history.shift();
-    if (sim.today.done || sim.today.verify) log(null, 'day', `🌙 第 ${sim.day} 天结束 · 交付 ${sim.today.done} 项 · 校验 ${sim.today.verify} 次`, '#8b5cff');
+    if (sim.today.done || sim.today.verify) log(null, 'day', `🌙 第 ${sim.day} 天结束 · 交付 ${sim.today.done} 项 · 校验 ${sim.today.verify} 次`, '#7c3aed');
     sim.day++; sim.min = DAY_START; sim.today = { done: 0, leads: 0, pipeline: 0, hours: 0, verify: 0 };
   };
 

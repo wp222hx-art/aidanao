@@ -110,3 +110,37 @@ window.HIGH_RISK_ACTIONS = ['追加广告预算', '客户群发触达', '调整�
 window.SURNAMES = '王李张刘陈杨黄赵吴周徐孙马朱胡郭何林罗高郑梁谢宋唐许韩冯邓曹彭曾萧田董潘袁蔡蒋余于杜叶程魏苏吕丁任沈姚卢钟姜崔谭陆范汪廖石金韦贾夏付方邹熊白孟秦邱侯江尹薛闫段雷龙黎史陶贺毛郝顾龚邵万覃武钱戴严欧莫孔向常汤康易乔赖文'.split('');
 window.GIVEN = '伟芳娜秀英敏静丽强磊军洋勇艳杰娟涛明超秀霞平刚桂英华玉兰飞鑫波宁斌浩凯晨宇轩然欣怡子涵梓萱思远博文雨辰诗琪嘉怡天佑俊杰一鸣雅婷佳琪泽宇晓东海燕春梅志强建华'.match(/.{1,2}/g);
 window.SKILL_DICT = ['Excel', 'PPT', '数据分析', 'Python', 'SQL', '财务', '会计', '税务', '招聘', '培训', '谈判', '大客户', '渠道', '电商', '直播', '短视频', '文案', '设计', 'PS', 'AI', 'CAD', '项目管理', '供应链', '采购', '质量', 'ISO', '精益', '六西格玛', '法务', '合同', '客服', '运营', '私域', 'SEO', '投放', '品牌', '产品', '研发', 'Java', '前端', '测试', '运维', '生产', '工艺', '设备', '仓储', '物流', '英语', '销售', '市场', '策划', '管理'];
+
+// ================= 岗位能力分级 × Genspark 决策调用库 =================
+window.TIERS = {
+  std: { k: 'std', name: '一般级', short: '一般', icon: 'fa-user', color: '#64748b', bg: '#f1f5f9', model: 'gpt-5.4-mini', calls: 1, pass: 78, tools: ['search'],
+    desc: '清单式执行：信息整理、标准动作，输出可直接照做的步骤表' },
+  master: { k: 'master', name: '大师级', short: '大师', icon: 'fa-user-graduate', color: '#2563eb', bg: '#eff6ff', model: 'gpt-5.4', calls: 3, pass: 82, tools: ['search', 'batch', 'crawl', 'imgsearch'],
+    desc: '方法论驱动：显式框架 + 数据测算表 + 双方案取舍，证据深读' },
+  leader: { k: 'leader', name: '超级领袖级', short: '领袖', icon: 'fa-crown', color: '#c2410c', bg: '#fff7ed', model: 'gpt-5.5', calls: 5, pass: 85, tools: ['search', 'batch', 'crawl', 'imgsearch', 'image', 'doc'],
+    desc: '战略决策：SCQA、三方案对比、ROI 测算、风险矩阵、30/60/90 天里程碑' }
+};
+window.TIER_ORDER = ['std', 'master', 'leader'];
+window.TOOL_LIB = [
+  { k: 'search', name: '全网检索', icon: 'fa-magnifying-glass', gsk: 'web_search', desc: '单关键词检索公开网页，返回标题/摘要/链接' },
+  { k: 'batch', name: '多路并行检索', icon: 'fa-layer-group', gsk: 'batch_web_search', desc: '2-4 个关键词并行检索，覆盖面更广' },
+  { k: 'crawl', name: '网页深读', icon: 'fa-book-open-reader', gsk: 'crawler', desc: '抓取网页正文，把关键事实读进证据包' },
+  { k: 'imgsearch', name: '图片检索', icon: 'fa-images', gsk: 'image_search', desc: '检索竞品物料、参考视觉' },
+  { k: 'image', name: 'AI 视觉生成', icon: 'fa-wand-magic-sparkles', gsk: 'image_generation', desc: '生成海报/视觉稿并嵌入成果' },
+  { k: 'doc', name: '长文档分析', icon: 'fa-file-pdf', gsk: 'summarize_large_document', desc: '研报/PDF/招标文件深度问答' }
+];
+window.CORE_TOOLS = [
+  { k: 'plan', name: '执行规划', icon: 'fa-list-check', gsk: 'llm_proxy', desc: '拆出验收标准与工具调用计划' },
+  { k: 'write', name: '成果撰写', icon: 'fa-pen-nib', gsk: 'llm_proxy', desc: '按级别模型撰写，引用证据 [n]' },
+  { k: 'accept', name: '独立验收', icon: 'fa-clipboard-check', gsk: 'llm_proxy', desc: '逐条核对验收标准，引用原文' }
+];
+window.toolMeta = (k) => TOOL_LIB.find((t) => t.k === k) || CORE_TOOLS.find((t) => t.k === k) || { name: k, icon: 'fa-gear' };
+window.autoTier = (s) => {
+  const pos = s.pos || '';
+  if (/总监|总经理|副总|首席|CEO|COO|CTO|CFO|合伙人|董事/.test(pos) || (s.value || 0) >= 88) return 'leader';
+  if (/经理|主管|高级|资深|专家|架构|主任/.test(pos) || (s.value || 0) >= 72) return 'master';
+  return 'std';
+};
+window.tierOf = (s) => (s && TIERS[s.tier]) ? s.tier : (s ? autoTier(s) : 'std');
+window.staffTools = (s) => { const t = TIERS[tierOf(s)]; const sel = (s?.tools || []).filter((x) => t.tools.includes(x)); return sel.length ? sel : t.tools.slice(); };
+window.tierBadge = (k, sm) => { const t = TIERS[k] || TIERS.std; return `<span class="tier ${sm ? 'sm' : ''}" style="--tc:${t.color};--tb:${t.bg}"><i class="fas ${t.icon}"></i>${sm ? t.short : t.name}</span>`; };

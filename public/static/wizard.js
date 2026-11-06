@@ -307,7 +307,7 @@
     S.company.scan = scan || { news: [], wiki: null };
     S.company.profile = buildProfile(S.company.scan);
     if (window.AI && AI.on) {
-      L('<span style="color:#b69bff">调用 Genspark：全网检索企业简介、客户、竞争对手、最新动态…</span>');
+      L('<span style="color:#7c3aed">调用 Genspark：全网检索企业简介、客户、竞争对手、最新动态…</span>');
       const tick = setInterval(() => L(pick(['AI 阅读检索证据…', 'AI 构建价值链…', 'AI 填写商业模式画布…', 'AI 评估七域经营健康度…', 'AI 挖掘生意机会与风险…', 'AI 生成找订单检索词…'])), 1800);
       try { await AI.enrichProfile(); L('<span style="color:var(--ok)">Genspark 深度画像完成</span>'); }
       catch (e) { L(`<span style="color:var(--warn)">AI 画像失败（${esc(e.message)}），已使用行业推断画像</span>`); }
@@ -330,7 +330,7 @@
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-link" style="color:var(--c2)"></i> 企业价值链</span></div>
         <div class="vchain">${P.chain.map((c, i) => `${i ? '<i class="fas fa-angle-right ar"></i>' : ''}<span class="v">${c}</span>`).join('')}</div></div>
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-heart-pulse" style="color:var(--c3)"></i> 七域经营诊断（初判）</span></div>
-        ${P.domains.map((d) => `<div class="flex" style="margin:6px 0" title="${esc(d.note || '')}"><span style="width:70px;font-size:12px">${d.name}</span><div class="bar" style="flex:1"><i style="width:${d.score}%;${d.score < 60 ? 'background:linear-gradient(90deg,#ff5d6c,#ffb547)' : ''}"></i></div><b style="width:30px;text-align:right;font-size:12px">${d.score}</b></div>`).join('')}
+        ${P.domains.map((d) => `<div class="flex" style="margin:6px 0" title="${esc(d.note || '')}"><span style="width:70px;font-size:12px">${d.name}</span><div class="bar" style="flex:1"><i style="width:${d.score}%;${d.score < 60 ? 'background:linear-gradient(90deg,#dc2626,#d97706)' : ''}"></i></div><b style="width:30px;text-align:right;font-size:12px">${d.score}</b></div>`).join('')}
         <p class="hint mt">短板：${P.weakest.map((w) => w.name).join('、')} —— 将作为首批增长项目候选。</p></div>
       <div class="card"><div class="ct"><span class="h3"><i class="fas fa-table-cells" style="color:var(--warn)"></i> 商业模式画布（精简）</span></div>
         <div class="grid2" style="gap:8px">${Object.entries(P.canvas).map(([k, v]) => `<div style="padding:8px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid var(--line)"><div class="dim" style="font-size:11px">${k}</div><div style="font-size:12px;margin-top:3px">${esc(v)}</div></div>`).join('')}</div></div>
@@ -378,7 +378,7 @@
   function addDept(lib, custom, x, y) {
     const l = lib ? deptLib(lib) : null;
     if (l && S.depts.some((d) => d.lib === lib)) return toast('该部门已在布局中');
-    S.depts.push({ id: uid('d'), lib: lib || 'custom', name: l ? l.name : custom, icon: l ? l.icon : 'fa-sitemap', color: l ? l.color : '#00e5ff', x: x ?? rand(15, 85), y: y ?? rand(40, 88) });
+    S.depts.push({ id: uid('d'), lib: lib || 'custom', name: l ? l.name : custom, icon: l ? l.icon : 'fa-sitemap', color: l ? l.color : '#2563eb', x: x ?? rand(15, 85), y: y ?? rand(40, 88) });
     saveState(); renderPalette(); renderCanvas(); updateNext();
   }
   function renderPalette() {
@@ -407,8 +407,8 @@
   function drawLinks() {
     const cv = $('#canvas'); const W = cv.clientWidth, H = cv.clientHeight;
     const bx = W * .5, by = H * .56;
-    let s = `<defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#3ee0ff"/><stop offset="1" stop-color="#8b5cff"/></linearGradient></defs>`;
-    s += `<path d="M${W * .5} ${H * .09 + 40} L${bx} ${by - 45}" stroke="#ffd54f" stroke-width="2" class="flow" fill="none"/>`;
+    let s = `<defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>`;
+    s += `<path d="M${W * .5} ${H * .09 + 40} L${bx} ${by - 45}" stroke="#d97706" stroke-width="2" class="flow" fill="none"/>`;
     S.depts.forEach((d) => { const x = d.x / 100 * W, y = d.y / 100 * H; const mx = (x + bx) / 2, my = (y + by) / 2 - 30; s += `<path d="M${bx} ${by} Q${mx} ${my} ${x} ${y}" stroke="${d.color}" stroke-opacity=".7" stroke-width="1.6" class="flow" fill="none"/>`; });
     $('#links').innerHTML = s;
   }
@@ -426,6 +426,7 @@
           <div class="h3" id="form-title">录入员工</div>
           <div class="flex"><div class="col" style="flex:1;gap:4px"><label>姓名</label><input id="f-name"></div><div class="col" style="width:90px;gap:4px"><label>工龄(年)</label><input id="f-years" type="number" value="3" min="0"></div></div>
           <div class="col" style="gap:4px"><label>岗位</label><input id="f-pos" placeholder="如：销售经理"></div>
+          <div class="col" style="gap:4px"><label>能力级别 <span class="dim">（决定执行标准、模型与可调用的工具库；默认按岗位自动判定）</span></label><div class="tier-pick" id="f-tier">${TIER_ORDER.map((k) => { const T = TIERS[k]; return `<button type="button" data-k="${k}" style="--tc:${T.color};--tb:${T.bg}"><i class="fas ${T.icon}"></i>${T.name}</button>`; }).join('')}</div><div class="hint" id="f-tier-desc">自动：总监/总经理 → 超级领袖级；经理/主管/高级 → 大师级；其他 → 一般级</div></div>
           <div class="col" style="gap:4px"><label>简历 / 价值描述（粘贴文本或上传 .txt）</label><textarea id="f-resume" rows="6" placeholder="例：5年B2B大客户销售经验，擅长渠道拓展与谈判，熟练使用Excel与CRM，年度回款800万……"></textarea></div>
           <div class="flex"><label class="btn btn-ghost btn-sm" style="cursor:pointer"><i class="fas fa-file-arrow-up"></i>上传简历<input type="file" id="f-file" accept=".txt,.md" hidden></label><span class="hint" id="f-skills">AI 将自动识别技能标签</span></div>
           <button class="btn btn-pri" id="f-add"><i class="fas fa-user-plus"></i>录入并评估价值</button>
@@ -435,24 +436,29 @@
         <div class="staff-grid" id="staff-grid"></div>
       </div>
     </section>`;
+    let fTier = null;
+    const syncTier = () => { const auto = autoTier({ pos: $('#f-pos').value }); const k = fTier || auto; $$('#f-tier button').forEach((b) => b.classList.toggle('on', b.dataset.k === k)); $('#f-tier-desc').innerHTML = `${fTier ? '' : '<b>自动判定</b> · '}${TIERS[k].desc} · 工具：${TIERS[k].tools.map((x) => toolMeta(x).name).join(' / ')}`; };
+    $$('#f-tier button').forEach((b) => b.onclick = () => { fTier = fTier === b.dataset.k ? null : b.dataset.k; syncTier(); });
+    $('#f-pos').oninput = syncTier; syncTier();
     $('#f-resume').oninput = (e) => { const sk = parseSkills(e.target.value); $('#f-skills').innerHTML = sk.length ? sk.map((s) => `<span class="tag">${s}</span>`).join(' ') : 'AI 将自动识别技能标签'; };
     $('#f-file').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $('#f-resume').value = String(rd.result).slice(0, 3000); $('#f-resume').oninput({ target: $('#f-resume') }); }; rd.readAsText(f); };
     $('#f-add').onclick = () => {
       const name = $('#f-name').value.trim(); if (!name) return toast('请填写姓名');
       const resume = $('#f-resume').value.trim();
-      addStaff({ name, pos: $('#f-pos').value.trim() || '专员', years: +$('#f-years').value || 0, resume, skills: parseSkills(resume) });
-      ['#f-name', '#f-pos', '#f-resume'].forEach((s) => $(s).value = ''); $('#f-skills').textContent = 'AI 将自动识别技能标签';
+      addStaff({ name, pos: $('#f-pos').value.trim() || '专员', years: +$('#f-years').value || 0, resume, skills: parseSkills(resume), ...(fTier ? { tier: fTier, tierManual: true } : {}) });
+      fTier = null;
+      ['#f-name', '#f-pos', '#f-resume'].forEach((s) => $(s).value = ''); $('#f-skills').textContent = 'AI 将自动识别技能标签'; syncTier();
     };
     $('#f-gen').onclick = () => { genFor(curDept, rand(2, 4)); renderStaff(); };
     $('#f-genall').onclick = () => { S.depts.forEach((d) => { if (!S.staff.some((s) => s.deptId === d.id)) genFor(d.id, rand(2, 4)); }); renderStaff(); toast('已为所有部门生成示例员工', 'fa-users'); };
     renderStaff();
   }
   function addStaff(p) {
-    const s = { id: uid('p'), deptId: curDept, ...p }; s.value = scoreStaff(s);
+    const s = { id: uid('p'), deptId: curDept, ...p }; s.value = scoreStaff(s); if (!s.tier) s.tier = autoTier(s);
     S.staff.push(s); saveState(); renderStaff();
     if (window.AI && AI.on && (s.resume || '').length >= 10) {
       toast(`${s.name} 已入职，Genspark 正在解析简历…`, 'fa-user-check');
-      AI.resume(s).then(() => { if ($('#staff-grid')) renderStaff(); toast(`AI 评估完成：${s.name} · ${s.aiRole || ''} · ${s.value} 分`, 'fa-brain'); });
+      AI.resume(s).then(() => { if ($('#staff-grid')) renderStaff(); toast(`AI 评估完成：${s.name} · ${TIERS[tierOf(s)].name} · ${s.value} 分`, 'fa-brain'); });
     } else toast(`${s.name} 已入职 · 价值评分 ${s.value}`, 'fa-user-check');
   }
   window.genFor = function (deptId, n) {
@@ -463,7 +469,7 @@
       const skills = [...new Set([...(l ? SKILL_DICT.filter((k) => (l.name + l.tasks.join('')).includes(k)) : []), pick(SKILL_DICT), pick(SKILL_DICT)])].slice(0, 5);
       const years = i === 0 ? rand(8, 15) : rand(1, 8);
       const s = { id: uid('p'), deptId, name: genName(), pos: pos[Math.min(i, 4)], years, skills, resume: `${years}年${base}相关经验，擅长${skills.join('、')}。` };
-      s.value = scoreStaff(s); S.staff.push(s);
+      s.value = scoreStaff(s); s.tier = autoTier(s); S.staff.push(s);
     }
     saveState();
   };
@@ -477,10 +483,13 @@
       <div class="val"><div class="dim" style="font-size:10px">${p.aiPending ? '<i class="fas fa-spinner fa-spin"></i> AI评估中' : p.ai ? 'AI 评分' : '价值评分'}</div><b class="grad-txt">${p.value}</b></div>
       ${p.ai ? `<div style="font-size:11px;margin-top:8px;line-height:1.6"><span class="tag ok">${esc(p.aiRole || '')}</span> <span class="muted">优势：${esc(p.strengths || '')}</span><br><span class="dim">待提升：${esc(p.gaps || '')} · 搭档：${esc(p.pairAgent || '')}</span></div>` : ''}
       <div class="bar mt"><i style="width:${p.value}%"></i></div>
+      <div class="tl-row" style="margin-top:8px" title="可调用的 Genspark 工具">${staffTools(p).map((x) => `<span class="tl ok" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span>`).join('')}</div>
       <div class="sk">${p.skills.map((s) => `<span class="tag">${s}</span>`).join('') || '<span class="dim" style="font-size:12px">暂无技能标签</span>'}</div>
       <p class="dim" style="font-size:11px;margin-top:8px;line-height:1.5;max-height:34px;overflow:hidden">${esc(p.resume)}</p>
+      <span class="tier-sw" data-id="${p.id}" title="点击切换能力级别">${tierBadge(tierOf(p))}</span>
       <button class="del" data-id="${p.id}"><i class="fas fa-trash"></i></button></div>`).join('')
       : `<div class="empty-state" style="grid-column:1/-1;height:300px"><div><i class="fas fa-user-astronaut" style="font-size:36px"></i><p class="mt">该部门还没有员工</p><p class="hint">手动录入或点击「AI 生成示例员工」</p></div></div>`;
+    $$('.person .tier-sw').forEach((b) => b.onclick = () => { const p = S.staff.find((x) => x.id === b.dataset.id); const i = TIER_ORDER.indexOf(tierOf(p)); p.tier = TIER_ORDER[(i + 1) % 3]; p.tierManual = true; p.tools = null; saveState(); renderStaff(); toast(`${p.name} → ${TIERS[p.tier].name}`, 'fa-user-graduate'); });
     $$('.person .del').forEach((b) => b.onclick = () => { S.staff = S.staff.filter((s) => s.id !== b.dataset.id); saveState(); renderStaff(); });
     updateNext();
   }

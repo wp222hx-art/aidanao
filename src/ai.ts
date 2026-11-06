@@ -34,17 +34,35 @@ async function tool(e: Bindings, name: string, args: Record<string, unknown>) {
 }
 
 // ---- 调用大模型（Genspark LLM 代理，同一授权） ----
-async function llm(e: Bindings, system: string, user: string, opt: { json?: boolean; effort?: string } = {}) {
+async function llm(e: Bindings, system: string, user: string, opt: { json?: boolean; effort?: string; model?: string } = {}) {
   if (!e.GSK_API_KEY) throw new AiError('未配置 Genspark 授权（GSK_API_KEY）', 503)
-  const body: any = { model: model(e), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], reasoning_effort: opt.effort || 'minimal' }
+  const body: any = { model: opt.model || model(e), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], reasoning_effort: opt.effort || 'minimal' }
   if (opt.json !== false) body.response_format = { type: 'json_object' }
+  // 长文本成果用流式读取：上游对非流式请求约 120s 超时，流式可持续输出不被中断
+  if (opt.json === false) body.stream = true
   const r = await fetch(`${base(e)}/api/llm_proxy/v1/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${e.GSK_API_KEY}` }, body: JSON.stringify(body),
   })
   if (r.status === 401 || r.status === 403) throw new AiError('Genspark 授权无效或已过期', 401)
   if (!r.ok) throw new AiError(`大模型调用失败（HTTP ${r.status}）`, 502)
+  let content = ''
+  if (body.stream && r.body) {
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = ''
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break
+      buf += dec.decode(value, { stream: true })
+      let i; while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1)
+        if (!line.startsWith('data:')) continue
+        const d = line.slice(5).trim(); if (d === '[DONE]') continue
+        try { const j = JSON.parse(d); content += j?.choices?.[0]?.delta?.content || '' } catch { }
+      }
+    }
+    if (!content) throw new AiError('大模型未返回内容', 502)
+    return content
+  }
   const j: any = await r.json()
-  const content: string = j?.choices?.[0]?.message?.content || ''
+  content = j?.choices?.[0]?.message?.content || ''
   if (opt.json === false) return content
   try { return JSON.parse(content) } catch {
     const m = content.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]) } catch { } }
@@ -141,10 +159,10 @@ ai.post('/command', async (c) => {
   const b = await c.req.json<any>()
   const depts = (b.depts || []).map((d: any) => `${d.id}:${d.name}`).join('，')
   const out = await llm(c.env,
-    '你是企业的 AI 首席运营官，把老板的一句话指令拆解成可执行、可验收的部门任务。高风险动作（追加预算、群发触达、报价签约、人事决定、对外支付、税务申报、对外发布）必须标记 needApproval=true。输出 JSON。',
+    '你是企业的 AI 首席运营官，把老板的一句话指令拆解成可执行、可验收、结果导向的部门任务。每个任务要写清楚具体交付物（文件/清单/方案/测算表等）。按难度指定所需能力级别：std 一般级（信息整理、清单执行）、master 大师级（专业分析、方案设计、测算）、leader 超级领袖级（战略决策、跨部门统筹、重大商业判断）。高风险动作（追加预算、群发触达、报价签约、人事决定、对外支付、税务申报、对外发布）必须标记 needApproval=true。输出 JSON。',
     `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 300)}\n可用部门（id:名称）：${depts}${b.feedback ? `\n\n【上一轮反馈，必须据此改进拆解】\n${clip(b.feedback, 600)}` : ''}${(b.knowledge || []).length ? `\n\n【企业已沉淀的经验，拆解时遵循】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}\n\n输出 JSON：{"goal":"把指令改写成可衡量目标，40字内","tasks":[{"deptId":"必须是上面的id","title":"任务标题≤24字","deliverable":"交付物≤30字","sla":预计分钟(60-480),"needApproval":true/false}]}\n给 3-6 个任务，覆盖最相关的部门。`)
   const ids = new Set((b.depts || []).map((d: any) => d.id))
-  const tasks = (out.tasks || []).filter((t: any) => ids.has(t.deptId)).slice(0, 6).map((t: any) => ({ deptId: t.deptId, title: clip(t.title, 40), deliverable: clip(t.deliverable, 60), sla: Math.max(60, Math.min(480, +t.sla || 180)), needApproval: !!t.needApproval }))
+  const tasks = (out.tasks || []).filter((t: any) => ids.has(t.deptId)).slice(0, 6).map((t: any) => ({ deptId: t.deptId, title: clip(t.title, 40), deliverable: clip(t.deliverable, 60), sla: Math.max(60, Math.min(480, +t.sla || 180)), needApproval: !!t.needApproval, level: ['std', 'master', 'leader'].includes(t.level) ? t.level : 'master' }))
   return c.json({ ok: true, goal: clip(out.goal, 80), tasks })
 })
 
@@ -186,9 +204,129 @@ ai.post('/review', async (c) => {
   const results = (b.results || []).slice(0, 10).map((r: any, i: number) => `【${i + 1}】${clip(r.dept, 20)}｜${clip(r.title, 40)}｜校验${Math.round(+r.score || 0)}分｜返工${+r.rework || 0}次${r.human ? '｜人工通过' : ''}\n${clip(r.output, 700)}`).join('\n\n')
   const out = await llm(c.env,
     '你是企业的 AI 首席运营官，对一条老板指令的整体执行结果做验收与复盘：判断目标是否达成、提炼可复用经验、给出下一轮改进方向。客观、具体，不夸大。输出 JSON。',
-    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 200)}\n目标：${clip(b.goal, 120)}\n部门：${clip((b.depts || []).join('、'), 300)}\n\n【各部门交付】\n${results}\n\n输出 JSON：{"score":0-100（整体完成质量与目标贴合度）,"verdict":"achieved|partial|failed","summary":"60字内验收结论","lessons":[{"dept":"适用部门名称，通用写全局","text":"40字内可复用经验，写成下次照做的规则"}],"next":["下一轮可迭代的方向，每条30字内，1-3条"]}\nlessons 给 1-3 条。`)
+    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 200)}\n目标：${clip(b.goal, 120)}\n部门：${clip((b.depts || []).join('、'), 300)}\n\n【各部门交付】\n${results}\n\n输出 JSON：{"score":0-100（整体完成质量与目标贴合度）,"verdict":"achieved|partial|failed","summary":"60字内验收结论","lessons":[{"dept":"适用部门名称，通用写全局","text":"40字内可复用经验，写成下次照做的规则"}],"next":["下一轮可迭代的方向，每条30字内，1-3条"]}\nlessons 给 1-3 条。`, { model: 'gpt-5.4', effort: 'low' })
   const lessons = (out.lessons || []).slice(0, 3).map((l: any) => typeof l === 'string' ? { dept: '全局', text: clip(l, 80) } : { dept: clip(l.dept || '全局', 20), text: clip(l.text, 80) }).filter((l: any) => l.text)
   return c.json({ ok: true, score: Math.max(0, Math.min(100, Math.round(+out.score || 0))), verdict: ['achieved', 'partial', 'failed'].includes(out.verdict) ? out.verdict : 'partial', summary: clip(out.summary, 120), lessons, next: (out.next || []).slice(0, 3).map((x: any) => clip(x, 60)) })
+})
+
+
+// =====================================================================
+// 分级执行管线：规划 → 调用工具（决策调用库）→ 撰写 → 独立验收。每一步由前端记录到执行表。
+// =====================================================================
+const TIER: Record<string, { name: string; model: string; effort: string; calls: number; read: number; words: number; crit: number; pass: number; tools: string[]; rule: string }> = {
+  std: { name: '一般级', model: 'gpt-5.4-mini', effort: 'low', calls: 1, read: 0, words: 900, crit: 3, pass: 78, tools: ['search'],
+    rule: '清单式执行：给出可直接照做的步骤表（动作/负责人/时间/产出），信息整理要准确完整。' },
+  master: { name: '大师级', model: 'gpt-5.4', effort: 'medium', calls: 3, read: 2, words: 1600, crit: 4, pass: 82, tools: ['search', 'batch', 'crawl', 'imgsearch'],
+    rule: '专业方法论驱动：显式使用与任务匹配的框架（如 AARRR、4P/4C、销售漏斗、波特五力、价值链、RFM、TCO 比价、STAR 面试法等），必须包含至少 1 张数据测算表或对比表，并给出 2 个方案的取舍理由。' },
+  leader: { name: '超级领袖级', model: 'gpt-5.5', effort: 'medium', calls: 5, read: 3, words: 2400, crit: 5, pass: 85, tools: ['search', 'batch', 'crawl', 'imgsearch', 'image', 'doc'],
+    rule: '战略级决策成果：SCQA 结论先行；3 个可选方案对比（投入/收益/风险/周期）并明确推荐；ROI 或单位经济测算表（写明口径与假设）；风险矩阵与对冲动作；30/60/90 天里程碑（负责人+量化目标）；列出需要老板拍板的关键决策点。' },
+}
+const TOOL_DESC: Record<string, string> = {
+  search: 'search：全网检索，1 个关键词（返回标题/摘要/链接）',
+  batch: 'batch：多路并行检索，queries 填 2-4 个关键词',
+  crawl: 'crawl：深读网页正文（系统会自动对检索结果中最相关的页面执行，不要写进 calls）',
+  imgsearch: 'imgsearch：图片检索，找参考视觉/竞品物料',
+  image: 'image：AI 生成图片（海报/视觉稿），query 写英文画面描述，不含文字',
+  doc: 'doc：长文档/PDF 深度分析，需要 url 与 query(问题)',
+}
+const tierOf = (k: string) => TIER[k] || TIER.std
+const allowTools = (tier: string, tools: unknown) => { const t = tierOf(tier); const want = Array.isArray(tools) && tools.length ? tools.map(String) : t.tools; return want.filter((x) => t.tools.includes(x)) }
+const persona = (b: any) => `${clip(b.company, 60)}的${clip(b.pos || b.dept || '', 20)}${clip(b.owner || '', 10)}（${tierOf(b.tier).name}能力，所属${clip(b.dept, 20)}，搭档 AI：${clip(b.agent, 20)}）`
+const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+const ctxOf = (b: any) => `当前日期：${today()}（检索与时间表述以此为准，优先近 12 个月信息）\n企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n主营：${clip(b.business, 150)}\n部门：${clip(b.dept, 20)}${b.goal ? `\n所属老板指令目标：${clip(b.goal, 150)}` : ''}`
+
+ai.post('/task/plan', async (c) => {
+  const b = await c.req.json<any>()
+  const T = tierOf(b.tier), tools = allowTools(b.tier, b.tools)
+  const callable = tools.filter((x) => x !== 'crawl')
+  const out = await llm(c.env,
+    `你是${persona(b)}。你以「${T.name}」水准完成任务，先做执行规划：抓住任务本质 → 选定方法论框架 → 制定可量化、可核验的验收标准 → 规划需要调用的 Genspark 工具。验收标准必须包含数字、数量、格式或明确的判定条件，禁止“全面、深入、有效”这类无法核验的措辞。输出 JSON。`,
+    `${ctxOf(b)}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable, 120)}\n能力级别要求：${T.rule}\n\n【可用工具（决策调用库）】\n${tools.map((x) => '- ' + TOOL_DESC[x]).join('\n') || '（无外部工具，仅凭专业知识）'}\n工具调用上限：${T.calls} 次${(b.knowledge || []).length ? `\n\n【企业经验库】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}${b.feedback ? `\n\n【上一轮验收未通过，问题】${clip(b.feedback, 400)}` : ''}\n\n输出 JSON：{"understanding":"任务本质与成功标志，50字内","framework":"采用的方法论/框架及用法，60字内","criteria":[{"text":"可量化验收标准，30字内"}],"calls":[{"tool":"${callable.join('|') || 'none'}","query":"关键词或画面描述","queries":["batch 时填"],"url":"doc 时填","why":"15字内"}],"read":需要深读的网页数(0-${T.read}),"outline":["成果章节标题，4-7个"]}\n验收标准正好 ${T.crit} 条；calls 不超过 ${T.calls} 个，检索词要具体（含行业、地区、年份、产品等），不需要外部信息时 calls 为空数组。`,
+    { model: T.model, effort: 'low' })
+  const calls = (Array.isArray(out.calls) ? out.calls : []).filter((x: any) => callable.includes(x?.tool)).slice(0, T.calls).map((x: any) => ({ tool: x.tool, query: clip(x.query, 120), queries: (x.queries || []).slice(0, 4).map((q: any) => clip(q, 60)), url: clip(x.url, 400), why: clip(x.why, 40) }))
+  const criteria = (out.criteria || []).slice(0, T.crit).map((x: any) => clip(typeof x === 'string' ? x : x.text, 80)).filter(Boolean)
+  return c.json({ ok: true, tier: b.tier, model: T.model, understanding: clip(out.understanding, 120), framework: clip(out.framework, 140), criteria, calls, read: tools.includes('crawl') ? Math.max(0, Math.min(T.read, +out.read || 0)) : 0, outline: (out.outline || []).slice(0, 8).map((x: any) => clip(x, 30)) })
+})
+
+function parseBatch(text: string) {
+  const out: any[] = []; const re = /##\s*(.+?)\n-\s*Snippet:\s*([\s\S]*?)\n-\s*URL_\d+:\s*(\S+)/g; let m
+  while ((m = re.exec(text))) out.push({ title: m[1].trim(), snippet: clip(m[2].trim(), 220), url: m[3].trim() })
+  return out
+}
+ai.post('/task/tool', async (c) => {
+  const b = await c.req.json<any>()
+  const tools = allowTools(b.tier, b.tools)
+  if (!tools.includes(b.tool)) throw new AiError(`「${tierOf(b.tier).name}」无权调用工具 ${b.tool}`, 403)
+  const t0 = Date.now()
+  let sources: any[] = [], text = '', images: any[] = [], summary = ''
+  if (b.tool === 'search') {
+    const d = await tool(c.env, 'web_search', { q: clip(b.query, 120) })
+    sources = (d?.organic_results || []).slice(0, 6).map((x: any) => ({ title: clip(x.title, 100), url: x.link, snippet: clip(x.snippet, 220), date: x.date || '' }))
+    summary = `检索「${clip(b.query, 30)}」→ ${sources.length} 条结果`
+  } else if (b.tool === 'batch') {
+    const qs = (b.queries?.length ? b.queries : [b.query]).filter(Boolean).slice(0, 4).map((q: any) => clip(q, 60))
+    const d = await tool(c.env, 'batch_web_search', { queries: qs.length > 1 ? qs : [...qs, qs[0] + ' 2026'] })
+    const seen = new Set<string>(); sources = parseBatch(String(d?.result || '')).filter((x) => !seen.has(x.url) && seen.add(x.url)).slice(0, 10)
+    summary = `多路检索 ${qs.length} 个关键词 → ${sources.length} 条结果`
+  } else if (b.tool === 'crawl') {
+    if (!/^https?:\/\//.test(b.url || '')) throw new AiError('缺少网页地址', 400)
+    const d = await tool(c.env, 'crawler', { url: b.url })
+    text = clip(String(d?.result || '').replace(/\n{3,}/g, '\n\n'), 4500)
+    sources = [{ title: clip(b.title || b.url, 100), url: b.url, snippet: clip(text.replace(/\s+/g, ' '), 220) }]
+    summary = `深读网页 ${text.length} 字`
+  } else if (b.tool === 'imgsearch') {
+    const d = await tool(c.env, 'image_search', { query: clip(b.query, 80) })
+    images = (Array.isArray(d) ? d : d?.images || []).slice(0, 4).map((x: any) => ({ url: x.image_url, title: clip(x.title, 60), link: x.link }))
+    sources = images.map((x) => ({ title: x.title, url: x.link || x.url, snippet: '参考图片' }))
+    summary = `图片检索 → ${images.length} 张参考图`
+  } else if (b.tool === 'image') {
+    const d = await tool(c.env, 'image_generation', { query: clip(b.query, 500) + ', professional commercial design, no text, no watermark', aspect_ratio: '3:4' })
+    const u = d?.generated_images?.[0]?.image_urls?.[0]; if (!u) throw new AiError('图片生成失败', 502)
+    images = [{ url: fileUrl(u), title: 'AI 生成视觉稿' }]; summary = 'AI 生成视觉稿 1 张'
+  } else if (b.tool === 'doc') {
+    const d = await tool(c.env, 'summarize_large_document', { url: b.url, question: clip(b.query, 200) })
+    text = clip(String(d?.result || d?.answer || JSON.stringify(d)), 4000); sources = [{ title: '长文档分析', url: b.url, snippet: clip(text, 200) }]; summary = `长文档分析 ${text.length} 字`
+  } else throw new AiError('未知工具', 400)
+  return c.json({ ok: true, tool: b.tool, summary, sources, text, images, ms: Date.now() - t0 })
+})
+
+ai.post('/task/produce', async (c) => {
+  const b = await c.req.json<any>()
+  const T = tierOf(b.tier)
+  const ev = (b.evidence || []).slice(0, 14).map((x: any, i: number) => `[${i + 1}] ${clip(x.title, 80)}（${clip(x.url, 200)}）\n${clip(x.text || x.snippet, 1500)}`).join('\n\n')
+  const imgs = (b.images || []).slice(0, 3).map((x: any) => `![${clip(x.title, 20)}](${x.url})`).join('\n')
+  const output = await llm(c.env,
+    `你是${persona(b)}。你的工作以结果为导向：交付物要能直接拿去执行，或让老板据此拍板。
+硬性要求：
+1. 开头写「## 结论」：3 行以内给出核心判断和关键数字。
+2. 逐条满足【验收标准】，文末附「## 验收对照表」（| 标准 | 完成情况 | 所在章节 |）。
+3. 事实与数据只能来自【证据包】或公认的行业基准；引用证据时在句末标注 [n]，文末「## 来源」列出 [n] 标题 + URL；没有证据支撑的数字标注「估算」并写明测算口径。
+4. 不写空话套话（如“加强管理”“提升效率”“多措并举”“持续优化”）。每条建议都要写清：动作、负责岗位、时间、量化目标。
+5. 用 Markdown：二级/三级标题、编号列表、表格。
+6. 能力级别要求：${T.rule}
+7. 篇幅不超过 ${T.words} 字。高风险动作（报价签约、投放预算、对外发布、人事、支付）只写方案与审批要点，不能声称已经执行。`,
+    `${ctxOf(b)}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable, 120)}\n方法论框架：${clip(b.framework, 160)}\n成果章节：${(b.outline || []).map((x: any) => clip(x, 30)).join(' / ')}\n\n【验收标准】\n${(b.criteria || []).map((x: any, i: number) => `${i + 1}. ${clip(x, 80)}`).join('\n')}${(b.knowledge || []).length ? `\n\n【企业经验库（必须遵循）】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}\n\n【证据包】\n${ev || '（本任务未调用外部工具，仅基于专业知识；具体数字须标注估算）'}${imgs ? `\n\n【可嵌入成果的视觉稿】\n${imgs}` : ''}${b.feedback ? `\n\n【上一版验收未通过——必须逐条修正】\n${clip(b.feedback, 600)}\n【上一版成果】\n${clip(b.previous, 2500)}` : ''}`,
+    { json: false, model: T.model, effort: T.effort }) as string
+  return c.json({ ok: true, output, model: T.model, chars: output.length })
+})
+
+ai.post('/task/accept', async (c) => {
+  const b = await c.req.json<any>()
+  const T = tierOf(b.tier)
+  const crit: string[] = (b.criteria || []).slice(0, 6).map((x: any) => clip(x, 80))
+  const out = await llm(c.env,
+    '你是独立验收官，不偏袒执行方。逐条按验收标准核对成果，并引用成果原文作为证据；核对引用标注 [n] 是否在来源列表中。没有来源、也没标注「估算」的具体数据，算作准确性问题。空话套话扣业务价值分。输出 JSON。',
+    `${ctxOf(b)}\n任务：${clip(b.task, 200)}\n能力级别：${T.name}（${T.rule}）\n\n【验收标准】\n${crit.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n【可用来源数】${+b.sources || 0}\n\n【待验收成果】\n${clip(b.output, 9000)}\n\n输出 JSON：{"items":[{"i":标准序号,"status":"met|partial|miss","evidence":"引用成果原文，50字内","note":"判定理由，30字内"}],"acc":0-100,"evi":0-100,"time":0-100,"comp":0-100,"val":0-100,"feedback":"未通过时给出具体修改清单，120字内；通过时写亮点，60字内"}\n维度：acc 准确性；evi 证据溯源；time 完整度；comp 合规安全；val 业务价值（可落地、能带来订单/降本/提效）。`,
+    { model: 'gpt-5.4', effort: 'low' })
+  const sc = (k: string) => Math.max(0, Math.min(100, Math.round(+out[k] || 0)))
+  const evals = { acc: sc('acc'), evi: sc('evi'), time: sc('time'), comp: sc('comp'), val: sc('val') }
+  const items = crit.map((text, i) => { const it = (out.items || []).find((x: any) => +x.i === i + 1) || (out.items || [])[i] || {}; return { text, status: ['met', 'partial', 'miss'].includes(it.status) ? it.status : 'miss', evidence: clip(it.evidence, 100), note: clip(it.note, 60) } })
+  const met = items.filter((x) => x.status === 'met').length, partial = items.filter((x) => x.status === 'partial').length, miss = items.length - met - partial
+  const dim = evals.acc * .3 + evals.evi * .2 + evals.time * .15 + evals.comp * .15 + evals.val * .2
+  const critScore = items.length ? (met + partial * .5) / items.length * 100 : dim
+  const total = Math.round(dim * .6 + critScore * .4)
+  const pass = total >= T.pass && miss === 0
+  return c.json({ ok: true, evals, items, met, partial, miss, total, pass, threshold: T.pass, feedback: clip(out.feedback, 240) })
 })
 
 // ---------- ⑥ 简历解析 ----------

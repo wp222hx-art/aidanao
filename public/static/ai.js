@@ -91,6 +91,7 @@
       if (Array.isArray(r.skills) && r.skills.length) s.skills = r.skills.slice(0, 8);
       if (r.value) s.value = Math.max(1, Math.min(99, Math.round(r.value)));
       s.aiRole = r.role; s.strengths = r.strengths; s.gaps = r.gaps; s.pairAgent = r.pairAgent; s.ai = true;
+      if (!s.tierManual && TIERS[r.tier]) { s.tier = r.tier; s.tools = null; }
     } catch (e) { toast('AI 简历解析失败：' + e.message, 'fa-triangle-exclamation'); }
     s.aiPending = false; saveState();
   };
@@ -101,7 +102,7 @@
     const P = S.company.profile || {};
     const kws = (kwsIn?.length ? kwsIn : (P.leadKeywords?.length ? P.leadKeywords : (S.industry?.div?.kw || S.industry?.div?.name || '').split(' '))).filter(Boolean);
     const pickKw = [...kws].sort(() => Math.random() - .5).slice(0, 2);
-    simLog('lead', `🛰️ 销售 Agent 调用 Genspark 全网检索采购/招标：${esc(pickKw.join('、'))}`, '#3ee0ff', cmdId);
+    simLog('lead', `🛰️ 销售 Agent 调用 Genspark 全网检索采购/招标：${esc(pickKw.join('、'))}`, '#2563eb', cmdId);
     const r = await AI.call('/leads', { ...ctxBase(), keywords: pickKw });
     const out = [];
     (r.leads || []).forEach((l) => {
@@ -110,10 +111,10 @@
       const L = { id: uid('l'), title: l.title, link: l.link, desc: l.desc, source: src || '公开网络', real: true, ai: true, grade: l.grade, value: l.value, match: l.match, buyer: l.buyer, reason: l.reason, next: l.next, status: 'new', day: S.sim.day, cmdId };
       S.sim.leads.unshift(L); out.push(L);
       S.sim.metrics.leads++; S.sim.today.leads++; S.sim.real.leads++;
-      simLog('lead', `🎯 发现 <b>${L.grade}级</b> 真实商机：${esc(L.title.slice(0, 30))} · ${esc(L.reason || '')}`, L.grade === 'A' ? '#3ddc97' : '#3ee0ff', cmdId);
+      simLog('lead', `🎯 发现 <b>${L.grade}级</b> 真实商机：${esc(L.title.slice(0, 30))} · ${esc(L.reason || '')}`, L.grade === 'A' ? '#059669' : '#2563eb', cmdId);
     });
     if (S.sim.leads.length > 80) S.sim.leads.length = 80;
-    simLog('lead', `📡 检索 ${r.searched} 条公开信息，AI 筛出 ${out.length} 条有效商机`, '#3ee0ff', cmdId);
+    simLog('lead', `📡 检索 ${r.searched} 条公开信息，AI 筛出 ${out.length} 条有效商机`, '#2563eb', cmdId);
     saveState(); updateBadges();
     return out;
   };
@@ -136,7 +137,7 @@
     try {
       const r = await AI.call('/brief', { ...ctxBase(), data });
       S.sim.brief = { text: r.text, day: S.sim.day, t: simTime() };
-      simLog('cp', '📰 Genspark AI 经营日报已生成 · <a class="lnk" onclick="gotoView(\'cockpit\')">查看</a>', '#3ee0ff');
+      simLog('cp', '📰 Genspark AI 经营日报已生成 · <a class="lnk" onclick="gotoView(\'cockpit\')">查看</a>', '#2563eb');
       toast('AI 经营日报已生成', 'fa-file-lines');
     } catch (e) { toast('日报生成失败：' + e.message); }
     AI.briefing = false; saveState(); if ($('#brief-card')) gotoView('cockpit');
@@ -181,7 +182,7 @@
       addApproval('对外发布声明', b.id, `对外分发 AI 宣传视频「${C.title}」至 ${C.channels.join('/')}`, 0, C.id);
       simLog('content', '✅ AI 宣传视频生成完成，已提交老板审批分发 · <a class="lnk" onclick="gotoView(\'studio\')">预览</a>', '#ff4fa3');
       toast('AI 宣传视频已生成', 'fa-film'); AI.refreshCredits();
-    } catch (e) { toast('视频生成失败：' + e.message); simLog('esc', `⚠️ 视频生成失败：${esc(e.message)}`, '#ff5d6c'); }
+    } catch (e) { toast('视频生成失败：' + e.message); simLog('esc', `⚠️ 视频生成失败：${esc(e.message)}`, '#dc2626'); }
     AI.busy.video = false; saveState(); rerenderStudio();
   };
 
@@ -193,7 +194,7 @@
     try {
       const r = await AI.call('/agent', { name: `智脑·${d?.name || ''}·${t.title}`.slice(0, 40), query });
       t.deep = { runId: r.runId, state: r.state || 'queued', at: `D${S.sim.day} ${simTime()}` };
-      simLog('task', `🧠 「${esc(t.title.slice(0, 20))}」已交给 Genspark 超级智能体深度执行`, '#8b5cff', t.cmdId);
+      simLog('task', `🧠 「${esc(t.title.slice(0, 20))}」已交给 Genspark 超级智能体深度执行`, '#7c3aed', t.cmdId);
       toast('已提交 Genspark 超级智能体', 'fa-brain'); saveState(); pollDeep(t); openTaskModal(t.id);
     } catch (e) { toast('提交失败：' + e.message); }
   };
@@ -205,7 +206,7 @@
       try {
         const r = await AI.call('/agent/status?id=' + encodeURIComponent(t.deep.runId), null, 'GET');
         t.deep.state = r.state; t.deep.taskUrl = r.taskUrl;
-        if (r.result) { t.deep.result = r.result; simLog('deliver', `🧠 超级智能体完成「${esc(t.title.slice(0, 20))}」深度成果 · <a class="lnk" onclick="openTaskModal('${t.id}')">查看</a>`, '#8b5cff', t.cmdId); AI.refreshCredits(); }
+        if (r.result) { t.deep.result = r.result; simLog('deliver', `🧠 超级智能体完成「${esc(t.title.slice(0, 20))}」深度成果 · <a class="lnk" onclick="openTaskModal('${t.id}')">查看</a>`, '#7c3aed', t.cmdId); AI.refreshCredits(); }
         saveState();
         const m = $('.modal[data-task="' + t.id + '"]'); if (m) openTaskModal(t.id);
       } catch (e) { if (/无效/.test(e.message)) break; }

@@ -27,7 +27,7 @@
     p.innerHTML = hd('fa-gauge-high', '经营驾驶舱', '一脑 · 双域 · 六引擎：诊断 → 情报对标 → 策略 → 行动 → 实验验证 → 知识沉淀')
       + `<div class="card"><div class="engine-flow">${ENGINES.map((e, i) => `<div class="eng ${i === activeEng ? 'active' : ''}"><i class="fas ${e.icon} m"></i><b style="font-size:13px">${e.name}</b><div class="dim" style="font-size:11px;margin-top:4px;line-height:1.5">${e.desc}</div></div>`).join('')}</div></div>
       <div class="grid4 mt">
-        ${[['累计完成任务', M.done, 'fa-check-double', 'var(--ok)'], ['商机线索', M.leads, 'fa-crosshairs', 'var(--c1)'], ['管道金额', '¥' + fmtMoney(M.pipeline), 'fa-filter-circle-dollar', 'var(--c2)'], ['已成交', '¥' + fmtMoney(M.revenue), 'fa-trophy', '#ffca28']].map(([l, v, i, c]) => `<div class="stat"><div class="l"><i class="fas ${i}" style="color:${c}"></i> ${l}</div><div class="v">${v}</div></div>`).join('')}
+        ${[['累计完成任务', M.done, 'fa-check-double', 'var(--ok)'], ['商机线索', M.leads, 'fa-crosshairs', 'var(--c1)'], ['管道金额', '¥' + fmtMoney(M.pipeline), 'fa-filter-circle-dollar', 'var(--c2)'], ['已成交', '¥' + fmtMoney(M.revenue), 'fa-trophy', '#ca8a04']].map(([l, v, i, c]) => `<div class="stat"><div class="l"><i class="fas ${i}" style="color:${c}"></i> ${l}</div><div class="v">${v}</div></div>`).join('')}
       </div>
       <div class="grid2 mt">
         <div class="card"><div class="ct"><span class="h3">七域经营健康度</span><span class="tag">雷达</span></div>${radarSvg(P.domains)}</div>
@@ -46,8 +46,8 @@
     const pt = (i, r) => [cx + Math.cos(i / n * Math.PI * 2 - Math.PI / 2) * r, cy + Math.sin(i / n * Math.PI * 2 - Math.PI / 2) * r];
     let s = '';
     [.25, .5, .75, 1].forEach((k) => s += `<polygon points="${domains.map((_, i) => pt(i, R * k).join(',')).join(' ')}" fill="none" stroke="rgba(120,170,255,.15)"/>`);
-    domains.forEach((d, i) => { const [x, y] = pt(i, R + 18); s += `<line x1="${cx}" y1="${cy}" x2="${pt(i, R)[0]}" y2="${pt(i, R)[1]}" stroke="rgba(120,170,255,.12)"/><text x="${x}" y="${y}" fill="#8fa3c8" font-size="11" text-anchor="middle" dominant-baseline="middle">${d.name} ${d.score}</text>`; });
-    s += `<polygon points="${domains.map((d, i) => pt(i, R * d.score / 100).join(',')).join(' ')}" fill="rgba(62,224,255,.22)" stroke="#3ee0ff" stroke-width="2"/>`;
+    domains.forEach((d, i) => { const [x, y] = pt(i, R + 18); s += `<line x1="${cx}" y1="${cy}" x2="${pt(i, R)[0]}" y2="${pt(i, R)[1]}" stroke="rgba(120,170,255,.12)"/><text x="${x}" y="${y}" fill="#64748b" font-size="11" text-anchor="middle" dominant-baseline="middle">${d.name} ${d.score}</text>`; });
+    s += `<polygon points="${domains.map((d, i) => pt(i, R * d.score / 100).join(',')).join(' ')}" fill="rgba(62,224,255,.22)" stroke="#2563eb" stroke-width="2"/>`;
     return `<svg viewBox="0 0 300 270" style="width:100%;max-height:280px">${s}</svg>`;
   }
   function trendSvg(H) {
@@ -55,7 +55,7 @@
     const W = 420, Hh = 150, max = Math.max(5, ...data.map((d) => Math.max(d.done, d.leads)));
     const x = (i) => 20 + i * (W - 40) / Math.max(1, data.length - 1), y = (v) => Hh - 20 - v / max * (Hh - 40);
     const line = (k, c) => `<polyline points="${data.map((d, i) => x(i) + ',' + y(d[k])).join(' ')}" fill="none" stroke="${c}" stroke-width="2.5"/>` + data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d[k])}" r="3" fill="${c}"/>`).join('');
-    return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%">${data.map((d, i) => `<text x="${x(i)}" y="${Hh - 4}" fill="#5b6d93" font-size="10" text-anchor="middle">D${d.day}</text>`).join('')}${line('done', '#3ddc97')}${line('leads', '#3ee0ff')}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%">${data.map((d, i) => `<text x="${x(i)}" y="${Hh - 4}" fill="#5b6d93" font-size="10" text-anchor="middle">D${d.day}</text>`).join('')}${line('done', '#059669')}${line('leads', '#2563eb')}</svg>`;
   }
 
   // ---------------- 商机雷达 ----------------
@@ -87,7 +87,7 @@
     const box = $('#lead-list'); if (!box) return;
     const L = S.sim.leads;
     const radar = $('#lead-radar');
-    if (radar) { $$('.blip', radar).forEach((b) => b.remove()); L.slice(0, 18).forEach((l) => { const r = seeded(l.id); const ang = r() * Math.PI * 2, dist = l.grade === 'A' ? 15 + r() * 12 : l.grade === 'B' ? 25 + r() * 12 : 35 + r() * 10; const b = document.createElement('div'); b.className = 'blip'; const c = l.grade === 'A' ? '#3ddc97' : l.grade === 'B' ? '#3ee0ff' : '#8fa3c8'; b.style.cssText = `left:${50 + Math.cos(ang) * dist}%;top:${50 + Math.sin(ang) * dist}%;background:${c};color:${c}`; b.title = l.title; radar.appendChild(b); }); }
+    if (radar) { $$('.blip', radar).forEach((b) => b.remove()); L.slice(0, 18).forEach((l) => { const r = seeded(l.id); const ang = r() * Math.PI * 2, dist = l.grade === 'A' ? 15 + r() * 12 : l.grade === 'B' ? 25 + r() * 12 : 35 + r() * 10; const b = document.createElement('div'); b.className = 'blip'; const c = l.grade === 'A' ? '#059669' : l.grade === 'B' ? '#2563eb' : '#64748b'; b.style.cssText = `left:${50 + Math.cos(ang) * dist}%;top:${50 + Math.sin(ang) * dist}%;background:${c};color:${c}`; b.title = l.title; radar.appendChild(b); }); }
     const stl = { new: ['待跟进', 'p'], synced: ['跟进中', ''], quoted: ['已报价', 'warn'], won: ['已成交', 'ok'] };
     box.innerHTML = `<div class="flex between"><span class="h3">线索池（${L.length}）</span><span class="dim" style="font-size:12px">A 级在来源指令内自动跟进 · 其余可「下达跟进」</span></div>` + (L.length ? L.slice(0, 30).map((l) => `<div class="lead"><div class="grade g-${l.grade}">${l.grade}</div><div style="flex:1;min-width:0">
       <div style="font-weight:600;font-size:13px">${l.link ? `<a href="${esc(l.link)}" target="_blank" style="color:inherit;text-decoration:none">${esc(l.title)} <i class="fas fa-up-right-from-square" style="font-size:10px;color:var(--c1)"></i></a>` : esc(l.title)}</div>
@@ -129,22 +129,22 @@
     const cno = (id) => { const c = Flow.cmd(id); return c ? `<span class="cno" onclick="openCmdModal('${c.id}')">#${c.no}</span>` : ''; };
     p.innerHTML = hd('fa-gears', '工作机制', '指令驱动的闭环：每一项工作都从老板指令出发，经「循环 · 审批 · 校验 · 提升」四个机制收口')
       + `<div class="mech-flow">
-        ${[['fa-crown', '老板指令', '#ffd54f'], ['fa-brain', '智脑拆解', '#3ee0ff'], ['fa-user-shield', '闸门①方案确认', '#ffb547'], ['fa-share-nodes', '分发到部门 Agent', '#8b5cff'], ['fa-gear', '执行', '#4fc3f7'], ['fa-clipboard-check', '五维校验', '#3ddc97'], ['fa-shield-halved', '闸门②成果审批', '#ffb547'], ['fa-box-open', '交付', '#3ddc97'], ['fa-seedling', '复盘提升', '#b69bff']].map(([i, n, c], k) => `${k ? '<i class="fas fa-chevron-right arr"></i>' : ''}<span class="mf" style="--c:${c}"><i class="fas ${i}"></i>${n}</span>`).join('')}
-        <div class="mf-loops"><span><i class="fas fa-rotate-left" style="color:#ffb547"></i> 校验不过 → 返工</span><span><i class="fas fa-rotate-left" style="color:#ff5d6c"></i> 方案驳回 → 重拆</span><span><i class="fas fa-repeat" style="color:#3ddc97"></i> 例行/迭代 → 下一轮</span><span><i class="fas fa-book" style="color:#b69bff"></i> 经验 → 注入下次拆解与执行</span></div>
+        ${[['fa-crown', '老板指令', '#d97706'], ['fa-brain', '智脑拆解', '#2563eb'], ['fa-user-shield', '闸门①方案确认', '#d97706'], ['fa-share-nodes', '分发到部门 Agent', '#7c3aed'], ['fa-gear', '执行', '#0284c7'], ['fa-clipboard-check', '五维校验', '#059669'], ['fa-shield-halved', '闸门②成果审批', '#d97706'], ['fa-box-open', '交付', '#059669'], ['fa-seedling', '复盘提升', '#7c3aed']].map(([i, n, c], k) => `${k ? '<i class="fas fa-chevron-right arr"></i>' : ''}<span class="mf" style="--c:${c}"><i class="fas ${i}"></i>${n}</span>`).join('')}
+        <div class="mf-loops"><span><i class="fas fa-rotate-left" style="color:#d97706"></i> 校验不过 → 返工</span><span><i class="fas fa-rotate-left" style="color:#dc2626"></i> 方案驳回 → 重拆</span><span><i class="fas fa-repeat" style="color:#059669"></i> 例行/迭代 → 下一轮</span><span><i class="fas fa-book" style="color:#7c3aed"></i> 经验 → 注入下次拆解与执行</span></div>
       </div>
       <div class="grid4 mt">
-        <div class="mech-card" style="--c:#3ddc97"><div class="mc-hd"><i class="fas fa-repeat"></i><b>循环</b><span class="dim">让工作持续转起来</span></div>
+        <div class="mech-card" style="--c:#059669"><div class="mc-hd"><i class="fas fa-repeat"></i><b>循环</b><span class="dim">让工作持续转起来</span></div>
           <div class="grid3"><div class="stat sm"><div class="l">返工中</div><div class="v">${st.rework}</div></div><div class="stat sm"><div class="l">迭代轮次</div><div class="v">${st.iterations}</div></div><div class="stat sm"><div class="l">例行指令</div><div class="v">${st.routines}</div></div></div>
           <ul class="mech-ul"><li>校验 &lt;80 分 → 带评语返工，最多 1 次</li><li>老板驳回方案 → 带意见重新拆解</li><li>指令验收“部分达成” → 一键下一轮迭代</li><li>例行指令每天 09:00 自动续跑</li></ul></div>
-        <div class="mech-card" style="--c:#ffb547"><div class="mc-hd"><i class="fas fa-user-shield"></i><b>审批</b><span class="dim">两道闸门 · 老板拍板</span></div>
+        <div class="mech-card" style="--c:#d97706"><div class="mc-hd"><i class="fas fa-user-shield"></i><b>审批</b><span class="dim">两道闸门 · 老板拍板</span></div>
           <div class="grid3"><div class="stat sm"><div class="l">待确认方案</div><div class="v">${st.pendPlan}</div></div><div class="stat sm"><div class="l">待审成果</div><div class="v">${st.pendResult}</div></div><div class="stat sm"><div class="l">驳回率</div><div class="v">${M.approvals ? Math.round(M.rejects / M.approvals * 100) : 0}%</div></div></div>
           <ul class="mech-ul"><li><b>闸门①</b> 方案确认：拆解后先给老板过目</li><li><b>闸门②</b> 成果审批：高风险(${HIGH_RISK_ACTIONS.slice(0, 3).join('/')}…)与 L1 Agent 成果</li><li>人工复核：返工后仍不达标</li></ul>
           <label class="chk mt"><input type="checkbox" id="opt-plan" ${S.sim.settings.planConfirm ? 'checked' : ''}> 新指令拆解后需我确认（闸门①）</label></div>
-        <div class="mech-card" style="--c:#3ee0ff"><div class="mc-hd"><i class="fas fa-clipboard-check"></i><b>校验</b><span class="dim">任务级 + 指令级</span></div>
+        <div class="mech-card" style="--c:#2563eb"><div class="mc-hd"><i class="fas fa-clipboard-check"></i><b>校验</b><span class="dim">任务级 + 指令级</span></div>
           <div class="grid3"><div class="stat sm"><div class="l">今日校验</div><div class="v">${st.verifyToday}</div></div><div class="stat sm"><div class="l">一次通过率</div><div class="v">${st.passRate}%</div></div><div class="stat sm"><div class="l">平均分</div><div class="v">${avg}</div></div></div>
           <div class="dims">${EVAL_DIMS.map((d) => `<span>${d.name}<b>${d.w}</b></span>`).join('')}</div>
           <ul class="mech-ul"><li>每项成果由质检 Agent 五维打分，≥80 通过</li><li>全部任务交付后，对指令做整体验收：达成 / 部分 / 未达成</li><li>督办：逾期→L1 提醒 Agent→L2 负责人→L3 老板</li></ul></div>
-        <div class="mech-card" style="--c:#b69bff"><div class="mc-hd"><i class="fas fa-seedling"></i><b>提升</b><span class="dim">越用越懂你的企业</span></div>
+        <div class="mech-card" style="--c:#7c3aed"><div class="mc-hd"><i class="fas fa-seedling"></i><b>提升</b><span class="dim">越用越懂你的企业</span></div>
           <div class="grid3"><div class="stat sm"><div class="l">经验库</div><div class="v">${st.knowledge}</div></div><div class="stat sm"><div class="l">晋级</div><div class="v" style="color:var(--ok)">${st.promoted}</div></div><div class="stat sm"><div class="l">降级</div><div class="v" style="color:var(--bad)">${st.demoted}</div></div></div>
           <ul class="mech-ul"><li>每条指令验收后复盘，提炼经验写入企业经验库</li><li>经验自动注入同部门后续拆解与执行</li><li>连续 2 次 ≥88 分 → 晋级；返工/人工兜底 → 降级</li></ul>
           <div class="dims">${lvCount.map(([lv, n]) => `<span style="color:${lvColor(lv)}">${lv}<b>${n}</b></span>`).join('')}</div></div>
@@ -152,8 +152,8 @@
       <div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-clock" style="color:var(--c1)"></i> 每日机制节拍</span><span class="dim" style="font-size:11px">时钟只驱动检查，不凭空制造工作</span></div>
         <div class="cadence">${CHECKPOINTS.map((c) => `<span class="cp ${S.sim.cp[S.sim.day + c.k] ? 'on' : ''}"><b>${esc(c.name.split(" ")[0])}</b>${esc(c.name.split(" ")[1] || "")}</span>`).join('<i class="fas fa-chevron-right dim"></i>')}</div></div>
       <div class="grid2 mt">
-        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-repeat" style="color:#3ddc97"></i> 例行指令 / 返工循环</span></div>
-          ${S.sim.routines.length ? S.sim.routines.map((r) => `<div class="rt"><i class="fas fa-repeat" style="color:#3ddc97"></i><span style="flex:1">${esc(r.text)}</span><span class="dim">自第${r.since}天</span><button class="btn btn-ghost btn-sm" data-unr="${esc(r.text)}">停止</button></div>`).join('') : '<div class="hint">暂无例行指令。下指令时勾选「每日例行」即可让 Agent 每天自动续跑。</div>'}
+        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-repeat" style="color:#059669"></i> 例行指令 / 返工循环</span></div>
+          ${S.sim.routines.length ? S.sim.routines.map((r) => `<div class="rt"><i class="fas fa-repeat" style="color:#059669"></i><span style="flex:1">${esc(r.text)}</span><span class="dim">自第${r.since}天</span><button class="btn btn-ghost btn-sm" data-unr="${esc(r.text)}">停止</button></div>`).join('') : '<div class="hint">暂无例行指令。下指令时勾选「每日例行」即可让 Agent 每天自动续跑。</div>'}
           <div class="h4 mt">返工中（${reworks.length}）</div>
           ${reworks.slice(0, 6).map((t) => `<div class="rt" style="cursor:pointer" onclick="openTaskModal('${t.id}')">${cno(t.cmdId)}<span style="flex:1">${esc(t.title.slice(0, 26))}</span><span class="dim" style="max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.feedback || '')}</span></div>`).join('') || '<div class="hint">✓ 当前没有返工任务</div>'}</div>
         <div class="card"><div class="ct"><span class="h3"><i class="fas fa-bell" style="color:var(--warn)"></i> 督办清单</span><span class="dim" style="font-size:11px">累计督办 ${M.esc}</span></div>
@@ -162,18 +162,18 @@
       <div class="grid2 mt">
         <div class="card"><div class="ct"><span class="h3"><i class="fas fa-clipboard-check" style="color:var(--c1)"></i> 最近校验记录</span></div>
           ${verified.length ? `<table class="table"><tr><th>指令</th><th>任务</th>${EVAL_DIMS.map((d) => `<th>${d.name.slice(0, 2)}</th>`).join('')}<th>总分</th><th>结论</th></tr>${verified.slice(0, 10).map((t) => `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')"><td>${cno(t.cmdId)}</td><td>${t.real ? '<span class="tag ok" style="font-size:10px;padding:0 4px">AI</span> ' : ''}${esc(t.title.slice(0, 16))}</td>${EVAL_DIMS.map((d) => `<td>${t.evals.ev[d.k]}</td>`).join('')}<td><b style="color:${t.evals.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">${t.evals.total}</b></td><td><span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span></td></tr>`).join('')}</table>` : '<div class="hint">下达指令后，每项成果的五维校验结果会出现在这里</div>'}</div>
-        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-book" style="color:#b69bff"></i> 企业经验库</span><span class="dim" style="font-size:11px">自动注入后续指令</span></div>
-          ${S.sim.knowledge.slice(0, 8).map((k) => `<div class="rt"><i class="fas fa-lightbulb" style="color:#b69bff"></i><span style="flex:1">${esc(k.title)}</span><span class="dim">${esc(k.dept)} · ${k.cmdNo ? '#' + k.cmdNo : ''} · 引用${k.used || 0}</span></div>`).join('') || '<div class="hint">指令验收复盘后，经验会沉淀到这里</div>'}
+        <div class="card"><div class="ct"><span class="h3"><i class="fas fa-book" style="color:#7c3aed"></i> 企业经验库</span><span class="dim" style="font-size:11px">自动注入后续指令</span></div>
+          ${S.sim.knowledge.slice(0, 8).map((k) => `<div class="rt"><i class="fas fa-lightbulb" style="color:#7c3aed"></i><span style="flex:1">${esc(k.title)}</span><span class="dim">${esc(k.dept)} · ${k.cmdNo ? '#' + k.cmdNo : ''} · 引用${k.used || 0}</span></div>`).join('') || '<div class="hint">指令验收复盘后，经验会沉淀到这里</div>'}
           <div class="h4 mt">Agent 评测排行（核心 Agent）</div>
           <table class="table"><tr><th>#</th><th>Agent</th><th>部门</th><th>等级</th><th>完成</th><th>返工</th><th>总分</th></tr>${rank.slice(0, 6).map((x, i) => `<tr style="cursor:pointer" onclick="openAgentModal('${x.id}')"><td>${i + 1}</td><td>${esc(x.name)}</td><td>${esc(deptName(x.deptId))}</td><td><span class="lvl" style="background:${lvColor(x.level)}33;color:${lvColor(x.level)}">${x.level}</span></td><td>${x.done}</td><td>${x.fail}</td><td><b>${agentTotal(x)}</b></td></tr>`).join('')}</table></div>
       </div>`;
     $('#opt-plan').onchange = (e) => { S.sim.settings.planConfirm = e.target.checked; saveState(); toast(e.target.checked ? '已开启：新指令需老板确认方案' : '已关闭：拆解后直接分发'); };
     $$('[data-unr]', p).forEach((b) => b.onclick = () => { Flow.toggleRoutine(b.dataset.unr, false); toast('已停止该例行指令'); mech(p); });
   }
-  window.unblock = (id) => { const t = Flow.task(id); if (!t) return; t.stuck = false; t.paused = false; t.retries = 0; t.esc = 0; t.sla = t.age + 120; simLog('esc', `🤝 老板协助解除「${esc(t.title.slice(0, 18))}」卡点`, '#3ddc97', t.cmdId); toast('已解除卡点，任务恢复执行'); saveState(); Flow.refresh(); };
+  window.unblock = (id) => { const t = Flow.task(id); if (!t) return; t.stuck = false; t.paused = false; t.retries = 0; t.esc = 0; t.sla = t.age + 120; simLog('esc', `🤝 老板协助解除「${esc(t.title.slice(0, 18))}」卡点`, '#059669', t.cmdId); toast('已解除卡点，任务恢复执行'); saveState(); Flow.refresh(); };
 
   // ---------------- 内容工厂 ----------------
-  const THEMES = [['#0b1430', '#3ee0ff', '#8b5cff'], ['#1a0b20', '#ff4fa3', '#ffb547'], ['#06201a', '#3ddc97', '#3ee0ff'], ['#1f1406', '#ffd54f', '#ff7043']];
+  const THEMES = [['#0b1430', '#2563eb', '#7c3aed'], ['#1a0b20', '#ff4fa3', '#d97706'], ['#06201a', '#059669', '#2563eb'], ['#1f1406', '#d97706', '#ff7043']];
   let studioState = { type: 'poster', theme: 0, title: '', sub: '', cta: '立即咨询', channels: ['抖音', '视频号', '小红书', '公众号'] };
   function studio(p) {
     const short = S.company.name.replace(/(有限公司|股份有限公司|有限责任公司|集团)$/, '');
@@ -273,14 +273,14 @@
         <div class="stat"><div class="l">节省工时</div><div class="v">${M.hours}h</div><div class="d muted">≈ ¥${fmtMoney(labor)}（按 ¥${wage}/h）</div></div>
         <div class="stat"><div class="l">降本金额</div><div class="v" style="color:var(--ok)">¥${fmtMoney(M.saved)}</div><div class="d muted">采购比价 / 预算偏差</div></div>
         <div class="stat"><div class="l">商机管道</div><div class="v" style="color:var(--c1)">¥${fmtMoney(M.pipeline)}</div><div class="d muted">${M.leads} 条线索</div></div>
-        <div class="stat"><div class="l">已成交收入</div><div class="v" style="color:#ffca28">¥${fmtMoney(M.revenue)}</div><div class="d muted">按 20% 毛利计入价值</div></div>
+        <div class="stat"><div class="l">已成交收入</div><div class="v" style="color:#ca8a04">¥${fmtMoney(M.revenue)}</div><div class="d muted">按 20% 毛利计入价值</div></div>
       </div>
       <div class="grid2 mt">
         <div class="card"><div class="ct"><span class="h3">ROI 测算</span><span class="tag warn">模拟值 · 需基线归因</span></div>
           <div style="font-size:13px;line-height:2">经验证价值合计：<b class="grad-txt" style="font-size:20px">¥${fmtMoney(total)}</b><br>智脑运行成本（估）：¥${fmtMoney(cost)}<br>ROI：<b style="color:var(--ok);font-size:18px">${cost ? ((total - cost) / cost * 100).toFixed(0) : 0}%</b></div>
           <p class="hint mt">口径：企业ROI＝（经合理验证的收益或成本节省 − 实施、订阅、数据许可、人审成本）÷ 投入成本。增长效果作为试点验证指标，不承诺固定增收比例。</p></div>
         <div class="card"><div class="ct"><span class="h3">价值来源构成</span></div>
-          ${[['人力释放', labor, '#3ee0ff'], ['降本', M.saved, '#3ddc97'], ['成交毛利', M.revenue * .2, '#ffca28']].map(([n, v, c]) => `<div class="flex" style="margin:10px 0"><span style="width:70px;font-size:12px">${n}</span><div class="bar" style="flex:1;height:10px"><i style="width:${total ? v / total * 100 : 0}%;background:${c}"></i></div><span style="width:80px;text-align:right;font-size:12px">¥${fmtMoney(v)}</span></div>`).join('')}
+          ${[['人力释放', labor, '#2563eb'], ['降本', M.saved, '#059669'], ['成交毛利', M.revenue * .2, '#ca8a04']].map(([n, v, c]) => `<div class="flex" style="margin:10px 0"><span style="width:70px;font-size:12px">${n}</span><div class="bar" style="flex:1;height:10px"><i style="width:${total ? v / total * 100 : 0}%;background:${c}"></i></div><span style="width:80px;text-align:right;font-size:12px">¥${fmtMoney(v)}</span></div>`).join('')}
           <div class="h3 mt">企业专属知识库（${S.sim.knowledge.length}）</div>${S.sim.knowledge.slice(0, 5).map((k) => `<div style="font-size:12px;margin-top:6px"><i class="fas fa-book" style="color:var(--c2)"></i> ${esc(k.title)} <span class="dim">· ${esc(k.dept)}</span></div>`).join('') || '<div class="hint mt">每日 19:00 自动沉淀经营复盘</div>'}</div>
       </div>
       <div class="card mt"><div class="ct"><span class="h3">每日价值日报</span></div><table class="table"><tr><th>日期</th><th>完成任务</th><th>新增商机</th><th>管道新增</th><th>节省工时</th></tr>${[...S.sim.history].reverse().concat([]).slice(0, 10).map((h) => `<tr><td>第${h.day}天</td><td>${h.done}</td><td>${h.leads}</td><td>¥${fmtMoney(h.pipeline)}</td><td>${h.hours}h</td></tr>`).join('')}<tr style="color:var(--c1)"><td>第${S.sim.day}天（进行中）</td><td>${S.sim.today.done}</td><td>${S.sim.today.leads}</td><td>¥${fmtMoney(S.sim.today.pipeline)}</td><td>${S.sim.today.hours}h</td></tr></table></div>`;
@@ -291,7 +291,7 @@
     p.innerHTML = hd('fa-sitemap', '组织与人才', `${S.depts.length} 个部门 · ${S.staff.length} 名员工 · ${S.agents.length} 个 Agent · 人机协同编制`, `<button class="btn btn-ghost btn-sm" id="edit-layout"><i class="fas fa-pen-ruler"></i>调整部门布局</button>`)
       + `<div class="grid3">${S.depts.map((d) => { const st = S.staff.filter((s) => s.deptId === d.id); const avg = st.length ? Math.round(st.reduce((a, s) => a + s.value, 0) / st.length) : 0; return `<div class="card" style="border-top:3px solid ${d.color}"><div class="ct"><span class="h3"><i class="fas ${d.icon}" style="color:${d.color}"></i> ${esc(d.name)}</span><button class="btn btn-ghost btn-sm" onclick="openDeptDrawer('${d.id}')">详情</button></div>
         <div class="flex between" style="font-size:12px"><span class="muted">员工 ${st.length}</span><span class="muted">Agent ${S.agents.filter((a) => a.deptId === d.id).length}</span><span class="muted">人才均分 <b style="color:var(--c1)">${avg}</b></span></div>
-        <div class="flex wrap mt" style="gap:6px">${st.map((s) => `<span class="tag p" style="cursor:pointer" onclick="openStaffModal('${s.id}')"><span class="avatar" style="width:16px;height:16px;font-size:9px;background:${avColor(s.name)}">${esc(s.name[0])}</span>${esc(s.name)} ${s.value}</span>`).join('')}</div></div>`; }).join('')}</div>`;
+        <div class="flex wrap mt" style="gap:6px">${st.map((s) => `<span class="tag p" style="cursor:pointer" onclick="openStaffModal('${s.id}')"><span class="avatar" style="width:16px;height:16px;font-size:9px;background:${avColor(s.name)}">${esc(s.name[0])}</span>${esc(s.name)} ${tierBadge(tierOf(s), true)}</span>`).join('')}</div></div>`; }).join('')}</div>`;
     $('#edit-layout').onclick = () => { if (confirm('返回创建向导调整部门与人员？（运行数据保留）')) { stopSim(); S.launched = false; S.step = 3; saveState(); renderApp(); } };
   }
 
@@ -306,7 +306,7 @@
           <div class="flex wrap mt" style="gap:6px">${(l ? l.tasks : []).map((t) => `<button class="tag" data-dt="${esc(t)}" style="cursor:pointer">${esc(t)}</button>`).join('')}</div></div>
         <div class="card"><div class="ct"><span class="h3">在办任务</span></div>${T.filter((t) => !['done', 'rejected'].includes(t.status)).slice(0, 10).map((t) => `<div style="margin:8px 0;cursor:pointer" onclick="openTaskModal('${t.id}')"><div class="flex between" style="font-size:12px"><span>${Flow.cmd(t.cmdId) ? '#' + Flow.cmd(t.cmdId).no + ' ' : ''}${esc(t.title)}</span><span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span></div><div class="bar" style="margin-top:4px"><i style="width:${t.progress}%"></i></div></div>`).join('') || '<div class="hint">暂无在办任务 —— 本部门只在接到指令后开工</div>'}</div>
         <div class="card"><div class="ct"><span class="h3">Agent 编队</span></div><div class="grid2">${ag.filter((a) => !a.sub).map(agentCard).join('')}</div><div class="hint mt">另有 ${ag.filter((a) => a.sub).length} 个执行体负责批量低风险动作</div></div>
-        <div class="card"><div class="ct"><span class="h3">员工</span></div>${st.map((s) => `<div class="flex" style="margin:8px 0;cursor:pointer" onclick="openStaffModal('${s.id}')"><div class="avatar" style="width:32px;height:32px;font-size:13px;background:${avColor(s.name)}">${esc(s.name[0])}</div><div style="flex:1"><b style="font-size:13px">${esc(s.name)}</b> <span class="dim" style="font-size:12px">${esc(s.pos)}</span></div><b class="grad-txt">${s.value}</b></div>`).join('')}</div>
+        <div class="card"><div class="ct"><span class="h3">员工</span></div>${st.map((s) => `<div class="flex" style="margin:8px 0;cursor:pointer" onclick="openStaffModal('${s.id}')"><div class="avatar" style="width:32px;height:32px;font-size:13px;background:${avColor(s.name)}">${esc(s.name[0])}</div><div style="flex:1"><b style="font-size:13px">${esc(s.name)}</b> <span class="dim" style="font-size:12px">${esc(s.pos)}</span></div>${tierBadge(tierOf(s), true)}<b class="grad-txt" style="margin-left:8px">${s.value}</b></div>`).join('')}</div>
       </div>`, (dr) => {
       const go = (txt) => { if (!txt) return; Flow.issue(`${d.name}：${txt}`, { plan: [{ deptId: id, title: txt, deliverable: '可直接使用的工作成果', sla: 240, needApproval: false, kind: d.lib === 'sales' && /商机|线索|订单|客户|询价|采购/.test(txt) ? 'leads' : null }] }); closeOverlay(); gotoView('flow'); toast(`指令已下达至 ${d.name}，可在调度中枢跟踪`); };
       $('#dt-go', dr).onclick = () => go($('#dt-in', dr).value.trim());
@@ -317,9 +317,17 @@
     const s = S.staff.find((x) => x.id === id); if (!s) return;
     const mine = S.sim.tasks.filter((t) => t.ownerId === id);
     openModal(`<div class="flex"><div class="avatar" style="width:56px;height:56px;font-size:22px;background:${avColor(s.name)}">${esc(s.name[0])}</div><div><div class="h2">${esc(s.name)}</div><div class="hint">${esc(deptName(s.deptId))} · ${esc(s.pos)} · ${s.years}年经验</div></div><div style="margin-left:auto;text-align:right"><div class="dim" style="font-size:11px">价值评分</div><b class="grad-txt" style="font-size:30px">${s.value}</b></div><button class="close-x" data-close style="margin-left:14px"><i class="fas fa-xmark"></i></button></div>
+      <div class="card mt"><div class="ct"><span class="h3">能力级别 · 决策调用库</span><span class="dim" style="font-size:12px">决定执行标准、撰写模型、验收门槛与可调用工具</span></div>
+        <div class="tier-pick" id="sm-tier">${TIER_ORDER.map((k) => { const T = TIERS[k]; return `<button type="button" data-k="${k}" class="${tierOf(s) === k ? 'on' : ''}" style="--tc:${T.color};--tb:${T.bg}"><i class="fas ${T.icon}"></i>${T.name}<small class="dim" style="font-size:10px">${T.model} · 门槛${T.pass}</small></button>`; }).join('')}</div>
+        <div class="hint mt">${TIERS[tierOf(s)].desc}</div>
+        <div class="h4 mt">工具组合（勾选该员工执行任务时可调用的 Genspark 工具）</div>
+        <div class="tool-pick mt">${TOOL_LIB.map((t) => { const allow = TIERS[tierOf(s)].tools.includes(t.k), on = allow && staffTools(s).includes(t.k); return `<label class="${on ? 'on' : ''} ${allow ? '' : 'off'}" title="${allow ? t.desc : '需更高能力级别'}"><input type="checkbox" data-tool="${t.k}" ${on ? 'checked' : ''} ${allow ? '' : 'disabled'}><i class="fas ${t.icon}"></i>${t.name}<small class="dim">${t.gsk}</small></label>`; }).join('')}</div></div>
       <div class="card mt"><div class="h3">简历与价值</div><p class="muted mt" style="line-height:1.7;font-size:13px">${esc(s.resume || '—')}</p><div class="flex wrap mt" style="gap:6px">${s.skills.map((k) => `<span class="tag">${k}</span>`).join('')}</div></div>
       <div class="grid2 mt"><div class="card"><div class="h3">AI 人才洞察</div><ul style="padding-left:18px;font-size:12px;line-height:1.9" class="muted mt"><li>适合作为「${s.value >= 80 ? '核心骨干 / 人审复核人' : '执行岗 / Agent 协作者'}」</li><li>建议搭配 Agent：${esc((S.agents.find((a) => a.deptId === s.deptId && !a.sub) || {}).name || '')}</li><li>能力补强：${pick(['数据分析', 'AI 工具使用', '项目管理', '谈判'])}</li></ul></div>
-      <div class="card"><div class="h3">负责的任务（${mine.length}）</div>${mine.slice(0, 5).map((t) => `<div style="font-size:12px;margin-top:6px">▸ ${esc(t.title)} <span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span></div>`).join('') || '<div class="hint mt">暂无</div>'}</div></div>`);
+      <div class="card"><div class="h3">负责的任务（${mine.length}）</div>${mine.slice(0, 6).map((t) => `<div style="font-size:12px;margin-top:6px;cursor:pointer" onclick="openTaskModal('${t.id}')">▸ ${esc(t.title)} <span class="tag ${stMap[t.status][1]}">${stMap[t.status][0]}</span>${t.accept ? ` <b style="color:${t.accept.pass ? 'var(--ok)' : 'var(--warn)'}">${t.accept.total}</b>` : ''}</div>`).join('') || '<div class="hint mt">暂无</div>'}</div></div>`, (m) => {
+      $$('#sm-tier button', m).forEach((b) => b.onclick = () => { s.tier = b.dataset.k; s.tierManual = true; s.tools = null; saveState(); toast(`${s.name} → ${TIERS[s.tier].name}`, 'fa-user-graduate'); openStaffModal(id); window.Flow && Flow.refresh(); });
+      $$('[data-tool]', m).forEach((c) => c.onchange = () => { s.tools = $$('[data-tool]:checked', m).map((x) => x.dataset.tool); if (!s.tools.length) { s.tools = null; toast('至少保留一个工具'); } saveState(); openStaffModal(id); });
+    });
   };
   window.openAgentModal = function (id) {
     const a = agentOf(id); if (!a) return;

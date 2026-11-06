@@ -5,6 +5,8 @@
   let S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || def(); } catch { S = def(); }
   window.S = S;
+  // 兼容旧数据：补齐员工能力级别
+  setTimeout(() => { (window.S.staff || []).forEach((p) => { if (!p.tier && window.autoTier) p.tier = autoTier(p); }); }, 0);
   window.saveState = () => { try { localStorage.setItem(KEY, JSON.stringify(window.S)); } catch (e) { } };
   window.resetState = () => { localStorage.removeItem(KEY); window.S = def(); };
 

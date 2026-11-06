@@ -54,7 +54,7 @@
       <main class="hq-main" id="hq-main"></main>
       <aside class="hq-side">
         <div class="side-sec cmd-box">
-          <div class="flex between"><span class="h3"><i class="fas fa-crown" style="color:#ffd54f"></i> 老板指令</span><span class="tag p">一切工作从这里开始</span></div>
+          <div class="flex between"><span class="h3"><i class="fas fa-crown" style="color:#d97706"></i> 老板指令</span><span class="tag p">一切工作从这里开始</span></div>
           <textarea id="cmd" rows="2" placeholder="例：本月把华东地区的订单做上去"></textarea>
           <div class="flex between"><label class="chk"><input type="checkbox" id="cmd-routine"> 设为每日例行（09:00 自动下发）</label><button class="btn btn-pri btn-sm" id="cmd-go"><i class="fas fa-paper-plane"></i>下达</button></div>
           <div class="flex wrap" style="gap:6px">${QUICK.map((q) => `<button class="tag" data-q="${q}" style="cursor:pointer">${q}</button>`).join('')}</div>
@@ -95,7 +95,7 @@
     else if (view === 'twin') renderIso(main);
     else window.renderModule(view, main);
   }
-  window.onFlowChange = () => { if (!$('#hq-main')) return; renderSide(); if (view === 'flow') updateBoard(); updateBadges(); };
+  window.onFlowChange = () => { if (!$('#hq-main')) return; renderSide(); if (view === 'flow') updateBoard(); updateBadges(); refreshTaskModal(); };
   window.onFlowLog = (e) => {
     const f = $('#feed'); if (!f) return;
     if (logScope === 'focus' && Flow.focus && e.cmd !== Flow.focus) return;
@@ -179,147 +179,127 @@
     list.forEach((e) => f.appendChild(feedEl(e)));
   }
 
-  // ====================== 调度中枢（结构化流程图） ======================
-  function renderBoard(main) {
-    main.innerHTML = `<section class="flow-board"><div class="fb-scroll" id="fb-scroll"><div class="fb-grid" id="fb-grid"></div><svg class="fb-loops" id="fb-loops"></svg><div class="fb-fx" id="fb-fx"></div></div></section>`;
-    const grid = $('#fb-grid');
-    grid.onclick = (e) => {
-      const chip = e.target.closest('[data-t]'); if (chip) return openTaskModal(chip.dataset.t);
-      const tr = e.target.closest('[data-track]'); if (tr) { Flow.focus = Flow.focus === tr.dataset.track ? null : tr.dataset.track; logScope = 'focus'; boardSig = ''; sideSig = ''; updateBoard(); renderSide(); renderFeed(); return; }
-      const ln = e.target.closest('[data-lane]'); if (ln) return openDeptDrawer(ln.dataset.lane);
-      const nd = e.target.closest('[data-node]'); if (nd) { const k = nd.dataset.node; if (k === 'boss' || k === 'confirm' || k === 'approve') gotoView('approve'); else if (k === 'improve') gotoView('mech'); }
-    };
-    $('#fb-scroll').onscroll = () => { };
-    updateBoard(true);
-    window.onresize = () => { if (view === 'flow') drawLoops(); };
+  // ====================== 调度中枢：老板指令 → 执行表 ======================
+  const STEPS6 = [['plan', '规划', 'fa-list-check'], ['tool', '调用工具', 'fa-toolbox'], ['write', '撰写', 'fa-pen-nib'], ['accept', '验收', 'fa-clipboard-check'], ['approve', '审批', 'fa-stamp'], ['deliver', '交付', 'fa-box-open']];
+  const ownerOf = (t) => S.staff.find((s) => s.id === t.ownerId);
+  function stepIdx(t) {
+    if (t.status === 'done') return 6;
+    if (t.status === 'approval' || t.status === 'review') return 4;
+    if (t.status === 'verify') return 3;
+    if (t.status === 'queued' || t.status === 'rejected') return -1;
+    if (t.step) return Math.max(0, STEPS6.findIndex((s) => s[0] === t.step));
+    return t.progress < 25 ? 0 : t.progress < 70 ? 1 : 2;
   }
-  function boardSignature() {
-    return [S.sim.commands.map((c) => c.id + c.stage + c.taskIds.length).join(), S.sim.tasks.map((t) => t.id + t.status + t.esc + (t.paused ? 'p' : '') + t.rework).join(), S.sim.approvals.filter((a) => a.status === 'pending').length, Flow.focus, S.sim.knowledge.length, S.agents.map((a) => a.status[0] + a.level).join('')].join('|');
+  function stepCells(t) {
+    const i = stepIdx(t), hadAppr = S.sim.approvals.some((a) => a.taskId === t.id);
+    return STEPS6.map(([k, n], j) => {
+      let st = j < i ? 'done' : j === i ? 'active' : 'pending';
+      if (k === 'approve' && t.status === 'done' && !hadAppr) st = 'skip';
+      if (k === 'accept' && t.status === 'rework' && j === i) st = 'warn';
+      return `<span class="s6 ${st}" title="${n}"><i></i><em>${n}</em></span>`;
+    }).join('');
+  }
+  function toolChips(t) {
+    const tr = t.trace || [];
+    return (t.tools || []).map((k) => {
+      const es = tr.filter((e) => e.step === 'tool' && e.tool === k), m = toolMeta(k);
+      const st = es.some((e) => e.status === 'run') ? 'run' : es.some((e) => e.status === 'ok') ? 'ok' : es.some((e) => e.status === 'fail') ? 'fail' : '';
+      return `<span class="tl ${st}" title="${m.name}（${m.gsk}）${es.length ? ' · 调用 ' + es.length + ' 次' : ' · 未调用'}"><i class="fas ${m.icon}"></i>${es.length > 1 ? `<b>${es.length}</b>` : ''}</span>`;
+    }).join('');
+  }
+  function acceptCell(t) {
+    const a = t.accept;
+    if (!a) return t.status === 'verify' ? '<span class="acc run"><i class="fas fa-spinner fa-spin"></i> 验收中</span>' : '<span class="dim">—</span>';
+    const ok = a.pass ?? (a.total >= (a.threshold || 80));
+    return `<span class="acc ${ok ? 'ok' : 'no'}"><b>${a.total}</b><small>/${a.threshold || 80}</small><span class="dots3">${(a.items || []).map((x) => `<i class="${x.status}"></i>`).join('')}</span></span>`;
   }
   function stageCount(k) {
     const T = S.sim.tasks, C = S.sim.commands;
-    return {
-      plan: C.filter((c) => c.stage === 'plan').length,
-      confirm: S.sim.approvals.filter((a) => a.kind === 'plan' && a.status === 'pending').length,
-      dispatch: T.filter((t) => t.status === 'queued').length,
-      exec: T.filter((t) => t.status === 'exec' || t.status === 'rework').length,
-      verify: T.filter((t) => t.status === 'verify').length,
-      approve: T.filter((t) => t.status === 'approval' || t.status === 'review').length,
-      deliver: T.filter((t) => t.status === 'done' && t.day === S.sim.day).length,
-      improve: C.filter((c) => c.stage === 'accept' || c.stage === 'improve').length
-    }[k];
+    return { plan: C.filter((c) => c.stage === 'plan').length, confirm: S.sim.approvals.filter((a) => a.kind === 'plan' && a.status === 'pending').length, dispatch: T.filter((t) => t.status === 'queued').length, exec: T.filter((t) => t.status === 'exec' || t.status === 'rework').length, verify: T.filter((t) => t.status === 'verify').length, approve: T.filter((t) => t.status === 'approval' || t.status === 'review').length, deliver: T.filter((t) => t.status === 'done' && t.day === S.sim.day).length, improve: C.filter((c) => c.stage === 'accept' || c.stage === 'improve').length }[k];
+  }
+  function renderBoard(main) {
+    main.innerHTML = `<section class="cc" id="cc"><div class="cc-pipe" id="cc-pipe"></div><div class="cc-body" id="cc-body"></div></section>`;
+    $('#cc').onclick = (e) => {
+      const r = e.target.closest('[data-t]'); if (r) return openTaskModal(r.dataset.t);
+      const o = e.target.closest('[data-owner]'); if (o) { e.stopPropagation(); return openStaffModal(o.dataset.owner); }
+      const c = e.target.closest('[data-cmd]'); if (c) return openCmdModal(c.dataset.cmd);
+      const f = e.target.closest('[data-fold]'); if (f) { Flow.focus = Flow.focus === f.dataset.fold ? null : f.dataset.fold; boardSig = ''; sideSig = ''; updateBoard(); renderSide(); renderFeed(); return; }
+      const g = e.target.closest('[data-gate]'); if (g) return gotoView(g.dataset.gate);
+      const d = e.target.closest('[data-dept]'); if (d) return openDeptDrawer(d.dataset.dept);
+    };
+    updateBoard(true);
+  }
+  function boardSignature() {
+    return [S.sim.commands.map((c) => c.id + c.stage + c.taskIds.length).join(), S.sim.tasks.map((t) => t.id + t.status + (t.step || '') + (t.trace?.length || 0) + (t.trace?.filter((e) => e.status === 'run').length || 0) + t.esc + (t.paused ? 'p' : '') + t.rework + (t.accept?.total || '')).join(), S.sim.approvals.filter((a) => a.status === 'pending').length, Flow.focus, S.staff.map((s) => s.tier || '').join(''), S.agents.map((a) => a.status[0]).join('')].join('|');
   }
   function updateBoard(force) {
-    const grid = $('#fb-grid'); if (!grid) return;
+    const body = $('#cc-body'); if (!body) return;
     const sig = boardSignature();
-    if (!force && sig === boardSig) { // 只更新进度条
-      $$('[data-t]', grid).forEach((el) => { const t = Flow.task(el.dataset.t); const b = el.querySelector('.cp-bar i'); if (t && b) b.style.width = t.progress + '%'; });
-      return;
-    }
+    if (!force && sig === boardSig) { $$('[data-t]', body).forEach((el) => { const t = Flow.task(el.dataset.t); const b = el.querySelector('.pg i'); if (t && b) b.style.width = t.progress + '%'; }); return; }
     boardSig = sig;
-    const F = Flow.focus, T = S.sim.tasks;
-    const extra = { rework: T.filter((t) => t.status === 'rework').length, review: T.filter((t) => t.status === 'review').length };
-    let h = '';
-    // 行1：阶段节点
-    h += `<div class="fb-node boss" data-node="boss"><i class="fas fa-crown"></i><b>老板</b><small>下达指令 · 两道闸门</small></div>`;
-    FLOW_STAGES.forEach((s) => {
-      const n = stageCount(s.k);
-      const sub = s.k === 'exec' && extra.rework ? `<em class="warn">返工 ${extra.rework}</em>` : s.k === 'approve' && extra.review ? `<em class="bad">复核 ${extra.review}</em>` : s.k === 'improve' ? `<em>经验 ${S.sim.knowledge.length}</em>` : '';
-      h += `<div class="fb-node ${s.gate ? 'gate' : ''} ${n ? 'hot' : ''}" data-node="${s.k}"><i class="fas ${s.i}"></i><b>${s.n}</b><small>${s.who}</small>${n ? `<span class="cnt">${n}</span>` : ''}${sub}</div>`;
-    });
-    h += `<div class="fb-gap"></div>`;
-    // 指令轨道
-    const cmds = [...Flow.active(), ...S.sim.commands.filter((c) => c.stage === 'done' && c.day === S.sim.day)].slice(0, 6);
-    h += `<div class="fb-sec"><i class="fas fa-route"></i> 指令轨道 <span class="dim">每条指令按阶段推进，点击聚焦</span></div>`;
-    if (!cmds.length) h += `<div class="fb-empty"><i class="fas fa-crown" style="color:#ffd54f"></i> 暂无指令 —— 在右侧下达第一条指令，智脑将拆解并沿流程向下分发；没有指令时所有 Agent 保持待命。</div>`;
-    cmds.forEach((c) => {
-      const st = Flow.cmdSteps(c), ts = c.taskIds.map(Flow.task).filter(Boolean);
-      const cntAt = (k) => ts.filter((t) => Flow.col(t) === k).length;
-      h += `<div class="fb-track-label ${F && F !== c.id ? 'dim2' : ''} ${F === c.id ? 'on' : ''}" data-track="${c.id}" style="--cc:${c.color}"><b>#${c.no}</b><span>${esc(c.text)}</span></div>`;
-      FLOW_STAGES.forEach((s, i) => {
-        const n = ['dispatch', 'exec', 'verify', 'approve', 'deliver'].includes(s.k) ? cntAt(s.k) : 0;
-        const tip = s.k === 'plan' && c.goal ? c.goal : s.k === 'improve' && c.acceptance ? `验收 ${c.acceptance.score}分` : '';
-        h += `<div class="fb-seg ${st[i]} ${F && F !== c.id ? 'dim2' : ''}" data-track="${c.id}" style="--cc:${c.color}" title="${esc(tip)}">${st[i] === 'active' && n ? n : st[i] === 'done' && s.k === 'improve' && c.acceptance ? c.acceptance.score : ''}</div>`;
-      });
-    });
-    // 部门 Agent 集群泳道
-    h += `<div class="fb-sec"><i class="fas fa-people-group"></i> 部门 Agent 集群 <span class="dim">任务按阶段落在各部门泳道；颜色 = 所属指令</span></div>`;
-    const act = (d) => T.some((t) => t.deptId === d.id && !['done', 'rejected'].includes(t.status));
-    S.depts.forEach((d) => {
-      const tasks = T.filter((t) => t.deptId === d.id && t.status !== 'rejected' && (t.status !== 'done' || t.day === S.sim.day || Flow.cmd(t.cmdId)?.stage !== 'done'));
-      const idle = !tasks.length;
-      const ags = S.agents.filter((a) => a.deptId === d.id);
-      const kn = S.sim.knowledge.filter((k) => k.deptId === d.id).length, l3 = ags.filter((a) => a.level === 'L3').length, l1 = ags.filter((a) => a.level === 'L1').length;
-      h += `<div class="fb-lane-label ${idle ? 'idle' : ''} ${act(d) ? 'act' : ''}" data-lane="${d.id}" style="--dc:${d.color}"><i class="fas ${d.icon}"></i><span><b>${esc(d.name)}</b><small>${S.staff.filter((s) => s.deptId === d.id).length} 人 · ${ags.length} Agent</small></span></div>`;
-      h += `<div class="fb-cluster ${idle ? 'idle' : ''}" title="Agent 集群：亮起 = 正在处理">${ags.slice(0, 18).map((a) => `<i class="ag ${a.sub ? 'sub' : ''} ${a.status}" title="${esc(a.name)} · ${a.level}"></i>`).join('')}${ags.length > 18 ? `<small>+${ags.length - 18}</small>` : ''}</div>`;
-      ['dispatch', 'exec', 'verify', 'approve', 'deliver'].forEach((k) => {
-        const list = tasks.filter((t) => Flow.col(t) === k);
-        h += `<div class="fb-cell ${idle ? 'idle' : ''}">${list.slice(0, 3).map(chip).join('')}${list.length > 3 ? `<span class="more">+${list.length - 3}</span>` : ''}</div>`;
-      });
-      h += `<div class="fb-cell imp ${idle ? 'idle' : ''}">${kn ? `<span class="kb-b" title="该部门经验条数"><i class="fas fa-book"></i>${kn}</span>` : ''}${l3 ? `<span class="lv3" title="自主级 Agent">L3×${l3}</span>` : ''}${l1 ? `<span class="lv1" title="建议级 Agent（成果需老板确认）">L1×${l1}</span>` : ''}</div>`;
-    });
-    grid.innerHTML = h;
-    requestAnimationFrame(drawLoops);
+    // 顶部：全局流程管线（每段由谁负责 + 当前数量）
+    $('#cc-pipe').innerHTML = `<div class="pipe-node boss"><i class="fas fa-crown"></i><b>老板指令</b><small>${Flow.active().length} 条进行中</small></div>` + FLOW_STAGES.map((s) => { const n = stageCount(s.k); return `<i class="fas fa-chevron-right pipe-ar"></i><div class="pipe-node ${s.gate ? 'gate' : ''} ${n ? 'hot' : ''}" ${s.gate ? `data-gate="approve"` : s.k === 'improve' ? 'data-gate="mech"' : ''}><i class="fas ${s.i}"></i><b>${s.n}</b><small>${s.who}</small>${n ? `<span class="cnt">${n}</span>` : ''}</div>`; }).join('');
+    const cmds = [...Flow.active(), ...S.sim.commands.filter((c) => c.stage === 'done' && c.day >= S.sim.day - 1)].slice(0, 8);
+    if (!cmds.length) { body.innerHTML = emptyHero(); return; }
+    const F = Flow.focus;
+    body.innerHTML = cmds.map((c) => cmdPanel(c, !F ? !['done', 'cancelled'].includes(c.stage) || cmds.length === 1 : F === c.id)).join('') + orgStrip();
   }
-  function chip(t) {
-    const c = Flow.cmd(t.cmdId), F = Flow.focus;
-    const icon = t.status === 'rework' ? '<i class="fas fa-rotate-left" title="返工"></i>' : t.status === 'review' ? '<i class="fas fa-user-check" title="人工复核"></i>' : t.status === 'approval' ? '<i class="fas fa-stamp" title="待审批"></i>' : t.status === 'done' ? '<i class="fas fa-check"></i>' : '';
-    return `<div class="chip ${t.status} ${F && F !== t.cmdId ? 'dim2' : ''} ${t.paused ? 'paused' : ''}" data-t="${t.id}" style="--cc:${c?.color || '#8fa3c8'}" title="${esc(t.title)}">
-      <span class="cn">#${c?.no || ''}</span>${icon}<span class="tt">${esc(t.title)}</span>${t.esc ? `<span class="esc">⏰${t.esc}</span>` : ''}${t.evals && ['approval', 'review', 'done'].includes(t.status) ? `<span class="sc">${t.evals.total}</span>` : ''}
-      ${['exec', 'rework'].includes(t.status) ? `<span class="cp-bar"><i style="width:${t.progress}%"></i></span>` : ''}</div>`;
+  function emptyHero() {
+    return `<div class="hero">
+      <div class="hero-l"><div class="h2"><i class="fas fa-crown" style="color:var(--gold)"></i> 一切工作从老板指令开始</div>
+        <p class="muted mt">在右侧输入一句话指令，智脑拆解为部门任务，并按<b>能力级别</b>匹配负责人；每个人调用自己权限内的 Genspark 工具组合完成工作，每一步都记录在<b>执行表</b>里，最后由独立验收官逐条核对验收标准。</p>
+        <div class="hero-flow mt">${['下达指令', '拆解 + 定级', '匹配负责人', '调用工具', '撰写成果', '逐条验收', '审批交付'].map((x, i) => `${i ? '<i class="fas fa-arrow-right"></i>' : ''}<span>${x}</span>`).join('')}</div></div>
+      <div class="hero-r">${TIER_ORDER.map((k) => { const T = TIERS[k]; return `<div class="tier-card" style="--tc:${T.color};--tb:${T.bg}"><div class="flex between">${tierBadge(k)}<span class="dim" style="font-size:11px">${T.model} · 门槛 ${T.pass}</span></div><div class="hint" style="margin:6px 0">${T.desc}</div><div class="tl-row">${T.tools.map((x) => `<span class="tl ok" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span><small>${toolMeta(x).name}</small>`).join('')}</div><div class="dim" style="font-size:11px;margin-top:6px">本企业 ${S.staff.filter((s) => tierOf(s) === k).length} 人</div></div>`; }).join('')}</div>
+    </div>` + orgStrip();
   }
-  // 循环箭头（返工 / 驳回 / 重新拆解 / 迭代 / 知识注入）
-  const LOOPS = [
-    { k: 'iterate', from: 'improve', to: 'plan', up: true, h: 44, label: '迭代循环 · 下一轮', color: '#b69bff' },
-    { k: 'kb', from: 'improve', to: 'exec', up: true, h: 22, label: '经验注入', color: '#8b5cff' },
-    { k: 'replan', from: 'confirm', to: 'plan', up: false, h: 20, label: '驳回重拆', color: '#ff5d6c' },
-    { k: 'rework', from: 'verify', to: 'exec', up: false, h: 20, label: '返工循环', color: '#ff8a65' },
-    { k: 'reject', from: 'approve', to: 'exec', up: false, h: 36, label: '驳回返工', color: '#ff5d6c' }
-  ];
-  function nodePos(k) {
-    const sc = $('#fb-scroll'), el = $(`#fb-grid [data-node="${k}"]`); if (!sc || !el) return null;
-    const r = el.getBoundingClientRect(), s = sc.getBoundingClientRect();
-    return { x: r.left - s.left + sc.scrollLeft + r.width / 2, top: r.top - s.top + sc.scrollTop, bottom: r.bottom - s.top + sc.scrollTop, w: r.width };
+  function cmdPanel(c, open) {
+    const st = Flow.cmdSteps(c), ts = c.taskIds.map(Flow.task).filter(Boolean);
+    const [sl, sc] = FLOW_SRC[c.source] || FLOW_SRC.boss;
+    const done = ts.filter((t) => t.status === 'done').length, pend = S.sim.approvals.filter((a) => a.cmdId === c.id && a.status === 'pending');
+    const calls = ts.reduce((n, t) => n + (t.trace || []).filter((e) => e.step === 'tool' && e.status === 'ok').length, 0);
+    const srcs = ts.reduce((n, t) => n + (t.evidence?.length || 0), 0);
+    const steps = `<div class="stepper">${FLOW_STAGES.map((s, i) => `<div class="stp ${st[i]} ${s.gate ? 'gate' : ''}"><span class="dot">${st[i] === 'done' ? '<i class="fas fa-check"></i>' : i + 1}</span><b>${s.n}</b><small>${s.who}</small></div>`).join('')}</div>`;
+    const hint = c.stage === 'confirm' ? `<div class="cmd-alert"><i class="fas fa-stamp"></i> 闸门①：方案已拆解为 ${c.plan.length} 项，等待您确认后分发 <button class="btn btn-pri btn-sm" data-cmd="${c.id}">查看并确认</button></div>` : c.stage === 'plan' ? `<div class="cmd-alert info"><i class="fas fa-spinner fa-spin"></i> 智脑正在拆解指令、为每项任务定能力级别…</div>` : '';
+    const rows = (ts.length ? ts : []).map((t) => {
+      const d = deptOf(t.deptId), o = ownerOf(t), stt = ST[t.status] || ['—', 'p'];
+      return `<tr class="exec-row rs-${t.status}" data-t="${t.id}" data-row-dept="${t.deptId}">
+        <td><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span></td>
+        <td class="tk"><b>${esc(t.title)}</b><small>${esc(t.deliverable || '')}</small></td>
+        <td>${o ? `<span class="own" data-owner="${o.id}"><span class="avatar xs" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>${esc(o.pos || '')}</small></span></span>` : '<span class="dim">未配置人员</span>'}</td>
+        <td>${tierBadge(t.tier, true)}${t.gap ? `<span class="gap" title="任务要求${TIERS[t.level].name}，部门无对应人员">需${TIERS[t.level].short}</span>` : ''}</td>
+        <td><div class="tl-row">${toolChips(t)}</div></td>
+        <td><div class="s6-row">${stepCells(t)}</div>${['exec', 'rework'].includes(t.status) ? `<div class="pg"><i style="width:${t.progress}%"></i></div>` : ''}</td>
+        <td>${acceptCell(t)}</td>
+        <td><span class="tag ${stt[1]}">${stt[0]}</span>${t.rework ? `<span class="tag warn">v${t.history.length + (t.status === 'rework' ? 1 : 0)}</span>` : ''}${t.esc ? `<span class="tag bad">督办L${t.esc}</span>` : ''}${t.paused ? '<span class="tag bad">暂停</span>' : ''}</td>
+      </tr>`;
+    }).join('');
+    const planRows = !ts.length && c.plan.length ? c.plan.map((p) => { const d = deptOf(p.deptId), o = Flow.pickOwner(p.deptId, p.level); const tr = o ? tierOf(o) : (p.level || 'master'); return `<tr class="exec-row plan"><td><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span></td><td class="tk"><b>${esc(p.title)}</b><small>${esc(p.deliverable || '')}</small></td><td>${o ? `<span class="own"><span class="avatar xs" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>拟定负责人</small></span></span>` : '—'}</td><td>${tierBadge(tr, true)}</td><td><div class="tl-row">${TIERS[tr].tools.map((x) => `<span class="tl" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span>`).join('')}</div></td><td colspan="3" class="dim">${p.needApproval ? '<span class="tag warn">高风险 · 需审批</span> ' : ''}待确认分发</td></tr>`; }).join('') : '';
+    return `<article class="cmd-panel ${open ? 'open' : ''} ${c.stage}" style="--cc:${c.color}">
+      <header class="cp-hd" data-fold="${c.id}">
+        <span class="cno-big">#${c.no}</span>
+        <div class="cp-t"><div class="flex" style="gap:8px"><span class="src" style="color:${sc};border-color:${sc}">${sl}${c.iteration > 1 ? ' · 第' + c.iteration + '轮' : ''}</span><b>${esc(c.text)}</b></div>${c.goal && c.goal !== c.text ? `<small><i class="fas fa-bullseye"></i> 目标：${esc(c.goal)}</small>` : ''}</div>
+        <div class="cp-m"><span><b>${done}</b>/${ts.length || c.plan.length || '-'} 交付</span><span><b>${calls}</b> 次工具调用</span><span><b>${srcs}</b> 条证据</span>${pend.length ? `<span class="warn"><b>${pend.length}</b> 待审批</span>` : ''}${c.acceptance ? `<span class="ok">验收 <b>${c.acceptance.score}</b></span>` : ''}<span class="${c.real ? 'ok' : 'dim'}">${c.real ? 'Genspark 真实执行' : '仿真'}</span></div>
+        <button class="btn btn-ghost btn-sm" data-cmd="${c.id}"><i class="fas fa-up-right-from-square"></i>指令详情</button>
+        <i class="fas fa-chevron-down fold"></i>
+      </header>
+      ${open ? `${steps}${hint}
+      ${ts.length || planRows ? `<table class="exec-table"><thead><tr><th>部门</th><th>任务 / 交付物</th><th>负责人</th><th>能力级别</th><th>调用工具组合</th><th>执行步骤</th><th>验收</th><th>状态</th></tr></thead><tbody>${rows || planRows}</tbody></table>` : ''}
+      ${c.acceptance ? `<div class="cp-acc"><i class="fas fa-clipboard-check"></i> 指令验收 <b>${c.acceptance.score}</b> 分 · ${{ achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict] || ''} · ${esc(c.acceptance.summary || '')}</div>` : ''}` : `<div class="cp-mini">${steps}</div>`}
+    </article>`;
   }
-  function drawLoops() {
-    const svg = $('#fb-loops'), sc = $('#fb-scroll'); if (!svg || !sc) return;
-    const W = sc.scrollWidth, H = sc.scrollHeight;
-    svg.setAttribute('width', W); svg.setAttribute('height', H);
-    let s = `<defs>${LOOPS.map((l) => `<marker id="ar-${l.k}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${l.color}"/></marker>`).join('')}</defs>`;
-    // 主流向箭头
-    const ks = ['boss', ...FLOW_STAGES.map((x) => x.k)];
-    for (let i = 0; i < ks.length - 1; i++) { const a = nodePos(ks[i]), b = nodePos(ks[i + 1]); if (!a || !b) continue; const y = (a.top + a.bottom) / 2; s += `<line x1="${a.x + a.w / 2 - 2}" y1="${y}" x2="${b.x - b.w / 2 + 2}" y2="${y}" stroke="#3ee0ff" stroke-width="2" stroke-opacity=".7" class="flow"/>`; }
-    LOOPS.forEach((l) => {
-      const a = nodePos(l.from), b = nodePos(l.to); if (!a || !b) return;
-      const ax = a.x + (l.up ? -6 : -10), bx = b.x + (l.k === 'kb' ? 10 : 6);
-      const y0 = l.up ? a.top : a.bottom, y1 = l.up ? b.top : b.bottom, yy = l.up ? Math.min(y0, y1) - l.h : Math.max(y0, y1) + l.h;
-      const d = `M${ax} ${y0} C ${ax} ${yy}, ${bx} ${yy}, ${bx} ${y1}`;
-      s += `<path id="loop-${l.k}" class="loop" d="${d}" stroke="${l.color}" fill="none" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar-${l.k})"/>`;
-      s += `<text x="${(ax + bx) / 2}" y="${yy + (l.up ? -4 : 12)}" fill="${l.color}" font-size="11" text-anchor="middle" class="loop-t" id="loopt-${l.k}">${l.label}</text>`;
-    });
-    svg.innerHTML = s;
+  function orgStrip() {
+    return `<div class="org-strip"><div class="os-hd"><b><i class="fas fa-people-group"></i> 组织运转</b><span class="dim">员工按能力级别着色；亮起 = 正在执行任务。点击部门查看详情</span></div><div class="os-grid">${S.depts.map((d) => {
+      const st = S.staff.filter((s) => s.deptId === d.id), act = S.sim.tasks.filter((t) => t.deptId === d.id && !['done', 'rejected'].includes(t.status));
+      const busyIds = new Set(act.map((t) => t.ownerId)), ags = S.agents.filter((a) => a.deptId === d.id), ab = ags.filter((a) => a.status !== 'idle').length;
+      return `<div class="os-card ${act.length ? 'act' : ''}" data-dept="${d.id}" style="--dc:${d.color}"><div class="flex between"><span class="dpt" style="--dc:${d.color}"><i class="fas ${d.icon}"></i>${esc(d.name)}</span><span class="dim" style="font-size:11px">${act.length ? `<b style="color:var(--c1)">${act.length}</b> 项在办` : '待命'}</span></div>
+        <div class="os-ppl">${st.map((s) => { const T = TIERS[tierOf(s)]; return `<span class="pp ${busyIds.has(s.id) ? 'busy' : ''}" style="--tc:${T.color}" title="${esc(s.name)} · ${esc(s.pos)} · ${T.name}">${esc(s.name[0])}</span>`; }).join('') || '<span class="dim" style="font-size:11px">未配置员工</span>'}</div>
+        <div class="os-ag"><span>Agent ${ab}/${ags.length}</span><div class="pg sm"><i style="width:${ags.length ? ab / ags.length * 100 : 0}%"></i></div></div></div>`;
+    }).join('')}</div></div>`;
   }
-  function pulseLoop(k) { [$('#loop-' + k), $('#loopt-' + k)].forEach((el) => { if (!el) return; el.classList.remove('pulse'); void el.getBBox?.(); el.classList.add('pulse'); setTimeout(() => el.classList.remove('pulse'), 2400); }); }
-  function boardAnchor(id) {
-    const map = { boss: '[data-node="boss"]', brain: '[data-node="plan"]', qa: '[data-node="verify"]', kb: '[data-node="improve"]' };
-    const sel = map[id] || `[data-lane="${id}"]`;
-    const sc = $('#fb-scroll'), el = $('#fb-grid ' + sel); if (!sc || !el) return null;
-    const r = el.getBoundingClientRect(), s = sc.getBoundingClientRect();
-    return { x: r.left - s.left + sc.scrollLeft + r.width / 2, y: r.top - s.top + sc.scrollTop + r.height / 2 };
-  }
-  // 统一动效入口：调度中枢 = 火花 + 循环脉冲；数字孪生 = 数据包
+  // 动效：调度中枢中高亮对应的执行行；数字孪生中发数据包
   window.flowFx = function (a, b, label, color) {
-    if (/返工/.test(label)) pulseLoop(/驳回|打回/.test(label) ? 'reject' : 'rework');
-    if (/驳回|打回/.test(label)) pulseLoop('reject');
-    if (/重新拆解/.test(label)) pulseLoop('replan');
-    if (/经验|知识/.test(label)) pulseLoop('kb');
-    if (view === 'flow') {
-      const p = boardAnchor(a), q = boardAnchor(b), fx = $('#fb-fx'); if (!p || !q || !fx) return;
-      const el = document.createElement('div'); el.className = 'spark'; el.style.color = color; el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; el.innerHTML = `<span>${esc(label)}</span>`;
-      fx.appendChild(el);
-      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.left = q.x + 'px'; el.style.top = q.y + 'px'; }));
-      setTimeout(() => el.remove(), 1500);
-    } else if (isoCtx) packet(a, b, label, color);
+    if (view === 'flow') { [a, b].forEach((id) => $$(`[data-row-dept="${id}"]`).forEach((el) => { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); })); }
+    else if (isoCtx) packet(a, b, label, color);
   };
 
   // ====================== 指令详情 ======================
@@ -338,7 +318,7 @@
         <table class="table"><tr><th>部门</th><th>任务</th><th>交付物</th><th>状态</th><th>校验</th><th>返工</th></tr>
         ${(ts.length ? ts : c.plan).map((x) => { const t = ts.length ? x : null; const d = deptOf(x.deptId); return `<tr ${t ? `style="cursor:pointer" onclick="openTaskModal('${t.id}')"` : ''}><td><i class="fas ${d?.icon}" style="color:${d?.color}"></i> ${esc(d?.name || '')}</td><td>${esc(x.title)}${x.needApproval ? ' <span class="tag warn" style="font-size:10px">高风险</span>' : ''}</td><td class="dim">${esc((x.deliverable || '').slice(0, 26))}</td><td>${t ? `<span class="tag ${ST[t.status][1]}">${ST[t.status][0]}</span>` : '<span class="tag p">待分发</span>'}</td><td>${t?.evals ? `<b style="color:${t.evals.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">${t.evals.total}</b>` : '-'}</td><td>${t?.rework || 0}</td></tr>`; }).join('')}</table></div>
       ${c.acceptance ? `<div class="grid2 mt"><div class="card"><div class="ct"><span class="h3"><i class="fas fa-clipboard-check" style="color:var(--c1)"></i> 指令验收</span><b class="grad-txt" style="font-size:24px">${c.acceptance.score}</b></div><span class="tag ${c.acceptance.verdict === 'achieved' ? 'ok' : c.acceptance.verdict === 'partial' ? 'warn' : 'bad'}">${{ achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict]}</span><p class="muted mt" style="font-size:13px;line-height:1.7">${esc(c.acceptance.summary)}</p></div>
-        <div class="card"><div class="h3"><i class="fas fa-arrow-trend-up" style="color:#b69bff"></i> 复盘提升</div>
+        <div class="card"><div class="h3"><i class="fas fa-arrow-trend-up" style="color:#7c3aed"></i> 复盘提升</div>
           ${(c.review?.lessons || []).map((l) => `<div style="font-size:12px;margin-top:6px"><i class="fas fa-book" style="color:var(--c2)"></i> ${esc(l)}</div>`).join('') || '<div class="hint mt">无</div>'}
           ${c.review?.promos?.length ? `<div style="font-size:12px;margin-top:8px"><i class="fas fa-ranking-star" style="color:var(--ok)"></i> ${esc(c.review.promos.join('、'))}</div>` : ''}
           ${(c.review?.next || []).length ? `<div class="hint mt">下一轮方向：${esc(c.review.next.join('；'))}</div>` : ''}</div></div>` : ''}
@@ -357,35 +337,67 @@
     on('#cm-cancel', () => { if (confirm(`确定取消 #${c.no}？未完成任务将停止。`)) { Flow.cancel(id); openCmdModal(id); } });
   };
 
-  // ====================== 任务详情 ======================
-  window.openTaskModal = function (id) {
-    const t = Flow.task(id); if (!t) return toast('任务已归档');
-    const d = deptOf(t.deptId), a = agentOf(t.agentId), c = Flow.cmd(t.cmdId), ev = t.evals?.ev;
+  // ====================== 任务详情：执行表 + 验收 ======================
+  function traceRows(t) {
+    const tr = t.trace || [];
+    if (!tr.length) return '<div class="hint">尚未开始执行</div>';
+    return `<table class="trace-tb"><thead><tr><th>时间</th><th>版本</th><th>步骤</th><th>工具 / 模型</th><th>执行记录</th><th>用时</th><th></th></tr></thead><tbody>${tr.map((e) => {
+      const m = e.step === 'tool' ? toolMeta(e.tool) : null;
+      const who = m ? `<span class="tl ${e.status}"><i class="fas ${m.icon}"></i></span> ${m.name}<small>${m.gsk}</small>` : `<span class="tl ok"><i class="fas ${toolMeta(e.step === 'write' ? 'write' : e.step).icon || 'fa-gear'}"></i></span> ${e.model || TIERS[t.tier]?.model || ''}<small>llm_proxy</small>`;
+      const src = (e.sources || []).length ? `<div class="tr-src">${e.sources.map((x, i) => `<a href="${esc(x.url)}" target="_blank" rel="noopener"><b>${i + 1}.</b> ${esc(x.title)}</a>${x.snippet ? `<small>${esc(x.snippet)}</small>` : ''}`).join('')}</div>` : '';
+      const img = (e.images || []).length ? `<div class="tr-img">${e.images.map((x) => `<a href="${esc(x.link || x.url)}" target="_blank"><img src="${esc(x.url)}" loading="lazy"></a>`).join('')}</div>` : '';
+      const crit = e.extra?.criteria ? `<ol class="tr-crit">${e.extra.criteria.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : '';
+      const items = e.extra?.items ? `<div class="tr-items">${e.extra.items.map((x) => `<div class="ai-${x.status}"><i class="fas ${x.status === 'met' ? 'fa-circle-check' : x.status === 'partial' ? 'fa-circle-half-stroke' : 'fa-circle-xmark'}"></i>${esc(x.text)}${x.evidence ? `<small>「${esc(x.evidence)}」${esc(x.note || '')}</small>` : ''}</div>`).join('')}</div>` : '';
+      return `<tr class="st-${e.status}"><td class="mono">${esc(e.at)}</td><td>v${e.v}</td><td><b>${TRACE_STEP[e.step] || e.step}</b></td><td class="who">${who}</td><td>${esc(e.detail || '')}${e.sim ? ' <span class="tag p">仿真</span>' : ''}${crit}${items}${src}${img}</td><td class="mono">${e.ms ? (e.ms / 1000).toFixed(1) + 's' : ''}</td><td>${e.status === 'run' ? '<i class="fas fa-spinner fa-spin" style="color:var(--c1)"></i>' : e.status === 'fail' ? '<i class="fas fa-circle-xmark" style="color:var(--bad)"></i>' : '<i class="fas fa-circle-check" style="color:var(--ok)"></i>'}</td></tr>`;
+    }).join('')}</tbody></table>`;
+  }
+  function taskModalHtml(t) {
+    const d = deptOf(t.deptId), a = agentOf(t.agentId), c = Flow.cmd(t.cmdId), o = ownerOf(t), ac = t.accept, ev = t.evals?.ev, T = TIERS[t.tier] || TIERS.std;
     const ai = window.AI && AI.on;
-    const m = openModal(`<div class="flex"><div class="bot-ic"><i class="fas fa-robot"></i></div><div style="min-width:0;flex:1"><div class="h2" style="font-size:17px">${esc(t.title)}</div><div class="hint">${esc(d?.name || '')} · ${esc(a?.name || '')}（${a?.level || ''}） · <span class="tag ${ST[t.status][1]}" style="font-size:10px">${ST[t.status][0]}</span> ${t.real ? '<span style="color:var(--ok)">Genspark 真实执行</span>' : '仿真任务'}${c ? ` · 所属指令 <a class="lnk" onclick="openCmdModal('${c.id}')">#${c.no}</a>` : ''}</div></div><button class="close-x" data-close><i class="fas fa-xmark"></i></button></div>
-      ${t.deliverable ? `<div class="hint mt"><b>交付物要求：</b>${esc(t.deliverable)}</div>` : ''}
-      ${!t.output ? `<div class="card mt"><div class="flex">${['exec', 'rework'].includes(t.status) ? '<i class="fas fa-spinner fa-spin" style="color:var(--c1)"></i>' : '<i class="fas fa-hourglass-half dim"></i>'}<span>${t.error ? `执行失败：${esc(t.error)}` : t.status === 'queued' ? '已分发，等待 Agent 接单' : 'Agent 正在执行…'}</span><div class="bar" style="flex:1"><i style="width:${t.progress}%"></i></div></div>${t.paused ? '<button class="btn btn-ghost btn-sm mt" id="tm-retry"><i class="fas fa-rotate"></i>重试</button>' : ''}${!t.real && ai && !['done', 'rejected'].includes(t.status) ? '<button class="btn btn-pri btn-sm mt" id="tm-real"><i class="fas fa-bolt"></i>改为 Genspark 真实执行</button>' : ''}</div>` : ''}
-      ${ev ? `<div class="grid2 mt" style="grid-template-columns:1.6fr 1fr">
-        <div class="card"><div class="ct"><span class="h3">成果 ${t.history.length > 1 ? `<span class="tag p">第 ${t.history.length} 版</span>` : ''}</span><button class="btn btn-ghost btn-sm" id="tm-copy"><i class="fas fa-copy"></i>复制</button></div><div class="md" style="max-height:44vh;overflow:auto">${mdRender(t.output)}</div></div>
-        <div class="col"><div class="card"><div class="ct"><span class="h3">校验 · 五维评测</span><b class="grad-txt" style="font-size:24px">${t.evals.total}</b></div>${EVAL_DIMS.map((dm) => `<div class="flex" style="margin:6px 0"><span style="width:60px;font-size:12px">${dm.name}</span><div class="bar" style="flex:1"><i style="width:${ev[dm.k]}%;${ev[dm.k] < 70 ? 'background:linear-gradient(90deg,#ff5d6c,#ffb547)' : ''}"></i></div><b style="width:26px;text-align:right;font-size:12px">${ev[dm.k]}</b></div>`).join('')}
-          <div class="hint mt" style="line-height:1.6"><b>${t.evals.total >= 80 ? '亮点' : '评审意见'}：</b>${esc(t.feedback || '—')}</div></div>
-          <div class="card"><div class="h3">循环记录</div>${t.history.map((h) => `<div class="flex between" style="font-size:12px;margin-top:6px"><span>v${h.v} · ${h.at}${h.researched ? ' · 含检索' : ''}</span><b style="color:${h.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">${h.total}分</b></div>`).join('')}${t.humanPassed ? '<div class="hint mt">👤 老板人工通过</div>' : ''}</div>
-        </div></div>` : ''}
-      ${t.deep ? `<div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-brain" style="color:var(--c2)"></i> Genspark 超级智能体</span><span class="tag ${t.deep.state === 'succeeded' ? 'ok' : 'p'}">${esc(t.deep.state)}</span></div>${t.deep.result ? `<div class="md" style="max-height:40vh;overflow:auto">${mdRender(t.deep.result.text || '（无文本成果）')}</div>` : '<div class="hint"><i class="fas fa-spinner fa-spin"></i> 深度执行中，每 15 秒自动刷新…</div>'}${t.deep.taskUrl ? `<a class="btn btn-ghost btn-sm mt" href="${esc(t.deep.taskUrl)}" target="_blank"><i class="fas fa-up-right-from-square"></i>在 Genspark 中查看完整过程</a>` : ''}</div>` : ''}
+    const crit = (t.criteria || []).map((x, i) => { const it = ac?.items?.[i]; return `<li class="${it ? 'ai-' + it.status : ''}"><i class="fas ${!it ? 'fa-circle dim' : it.status === 'met' ? 'fa-circle-check' : it.status === 'partial' ? 'fa-circle-half-stroke' : 'fa-circle-xmark'}"></i><span>${esc(x)}${it?.evidence ? `<small>验收证据：「${esc(it.evidence)}」${esc(it.note || '')}</small>` : ''}</span></li>`; }).join('');
+    return `<div class="flex"><div class="bot-ic"><i class="fas fa-file-signature"></i></div><div style="min-width:0;flex:1"><div class="h2" style="font-size:17px">${esc(t.title)}</div><div class="hint">${esc(d?.name || '')} · <span class="tag ${ST[t.status][1]}" style="font-size:10px">${ST[t.status][0]}</span> ${t.real ? '<span style="color:var(--ok)">Genspark 真实执行</span>' : '仿真任务'}${c ? ` · 所属指令 <a class="lnk" onclick="openCmdModal('${c.id}')">#${c.no}</a>` : ''}</div></div><button class="close-x" data-close><i class="fas fa-xmark"></i></button></div>
+      <div class="tm-grid mt">
+        <div class="card"><div class="h4">负责人</div>${o ? `<div class="own big mt" onclick="openStaffModal('${o.id}')"><span class="avatar" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>${esc(o.pos)} · 价值 ${o.value}</small></span></div>` : '<div class="hint mt">部门未配置员工</div>'}<div class="mt">${tierBadge(t.tier)} ${t.gap ? `<span class="gap">任务要求${TIERS[t.level].name}</span>` : ''}</div><div class="hint mt">搭档 Agent：${esc(a?.name || '')}</div></div>
+        <div class="card"><div class="h4">能力级别 → 决策调用库</div><div class="hint mt">${T.desc}</div><div class="tl-row mt">${(t.tools || []).map((k) => `<span class="tl ok"><i class="fas ${toolMeta(k).icon}"></i></span><small>${toolMeta(k).name}</small>`).join('')}</div><div class="hint mt">撰写模型 <b>${T.model}</b> · 验收门槛 <b>${T.pass}</b> 分且无未达项</div></div>
+        <div class="card"><div class="h4">交付物</div><div class="mt" style="font-size:13px"><b>${esc(t.deliverable || '—')}</b></div>${t.plan?.framework ? `<div class="hint mt"><b>方法框架：</b>${esc(t.plan.framework)}</div>` : ''}${t.plan?.understanding ? `<div class="hint"><b>成功标志：</b>${esc(t.plan.understanding)}</div>` : ''}</div>
+      </div>
+      <div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-bullseye" style="color:var(--c1)"></i> 验收标准</span>${ac ? `<span class="acc ${ac.pass ?? ac.total >= ac.threshold ? 'ok' : 'no'}" style="font-size:13px"><b>${ac.total}</b><small>/${ac.threshold}</small> · ${ac.met}/${(ac.items || []).length} 条达标</span>` : '<span class="dim" style="font-size:12px">待验收</span>'}</div><ul class="crit">${crit || '<li class="dim">规划阶段生成</li>'}</ul>${ac?.feedback || t.feedback ? `<div class="fb-box ${ac?.pass ? 'ok' : ''}"><b>${ac?.pass ? '验收亮点' : '验收意见'}：</b>${esc(ac?.feedback || t.feedback)}</div>` : ''}</div>
+      <div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-table-list" style="color:var(--c1)"></i> 执行表</span><span class="dim" style="font-size:12px">每一步调用都留痕：工具、关键词、来源、模型、用时</span></div>${traceRows(t)}</div>
+      ${t.output ? `<div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-file-lines" style="color:var(--c1)"></i> 成果 ${t.history.length > 1 ? `<span class="tag p">第 ${t.history.length} 版</span>` : ''}</span><button class="btn btn-ghost btn-sm" id="tm-copy"><i class="fas fa-copy"></i>复制</button></div><div class="md out">${mdRender(t.output)}</div></div>` : `<div class="card mt"><div class="flex">${['exec', 'rework', 'verify'].includes(t.status) ? '<i class="fas fa-spinner fa-spin" style="color:var(--c1)"></i>' : '<i class="fas fa-hourglass-half dim"></i>'}<span>${t.error ? `执行失败：${esc(t.error)}` : t.status === 'queued' ? '已分发，等待执行' : '执行中，执行表实时更新…'}</span><div class="bar" style="flex:1"><i style="width:${t.progress}%"></i></div></div>${t.paused ? '<button class="btn btn-ghost btn-sm mt" id="tm-retry"><i class="fas fa-rotate"></i>重试</button>' : ''}${!t.real && ai && !['done', 'rejected'].includes(t.status) ? '<button class="btn btn-pri btn-sm mt" id="tm-real"><i class="fas fa-bolt"></i>改为 Genspark 真实执行</button>' : ''}</div>`}
+      ${ev ? `<div class="grid2 mt"><div class="card"><div class="h4">五维评分</div>${EVAL_DIMS.map((dm) => `<div class="flex" style="margin:6px 0"><span style="width:60px;font-size:12px">${dm.name}</span><div class="bar" style="flex:1"><i style="width:${ev[dm.k]}%;${ev[dm.k] < 70 ? 'background:linear-gradient(90deg,#dc2626,#d97706)' : ''}"></i></div><b style="width:26px;text-align:right;font-size:12px">${ev[dm.k]}</b></div>`).join('')}</div>
+        <div class="card"><div class="h4">版本与循环</div>${t.history.map((h) => `<div class="flex between" style="font-size:12px;margin-top:8px"><span>v${h.v} · ${h.at}</span><b style="color:${h.total >= (TIERS[t.tier]?.pass || 80) ? 'var(--ok)' : 'var(--warn)'}">${h.total} 分</b></div><div class="hint">${esc(h.feedback || '')}</div>`).join('')}${t.humanPassed ? '<div class="hint mt">👤 老板人工通过</div>' : ''}</div></div>` : ''}
+      ${t.deep ? `<div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-brain" style="color:var(--c2)"></i> Genspark 超级智能体</span><span class="tag ${t.deep.state === 'succeeded' ? 'ok' : 'p'}">${esc(t.deep.state)}</span></div>${t.deep.result ? `<div class="md" style="max-height:40vh;overflow:auto">${mdRender(t.deep.result.text || '（无文本成果）')}</div>` : '<div class="hint"><i class="fas fa-spinner fa-spin"></i> 深度执行中，每 15 秒自动刷新…</div>'}</div>` : ''}
       ${t.output && t.status !== 'rejected' ? `<div class="card mt"><div class="h3">老板操作</div><div class="flex mt wrap">
         ${t.status !== 'done' ? `<button class="btn btn-pri btn-sm" id="tm-pass"><i class="fas fa-check"></i>${t.status === 'approval' ? '批准执行' : '人工通过'}</button>` : ''}
         <input id="tm-fb" placeholder="写下修改意见，打回进入返工循环" style="flex:1;min-width:200px;font-size:13px"><button class="btn btn-ghost btn-sm" id="tm-redo"><i class="fas fa-rotate-left"></i>打回返工</button>
-        ${ai && !t.deep ? '<button class="btn btn-ghost btn-sm" id="tm-deep" style="border-color:var(--c2);color:#b69bff"><i class="fas fa-brain"></i>超级智能体深度执行</button>' : ''}
-      </div></div>` : ''}`);
-    m.dataset.task = id;
-    const on = (sel, fn) => { const el = $(sel, m); if (el) el.onclick = fn; };
-    on('#tm-real', () => { t.real = true; t.status = 'queued'; t.progress = 0; t.age = 0; saveState(); Flow.refresh(); toast('已交给 Genspark 真实执行'); openTaskModal(id); });
+        ${ai && !t.deep ? '<button class="btn btn-ghost btn-sm" id="tm-deep"><i class="fas fa-brain"></i>超级智能体深度执行</button>' : ''}
+      </div></div>` : ''}`;
+  }
+  const taskSig = (t) => [t.status, t.step, t.trace?.length, t.trace?.filter((e) => e.status === 'run').length, t.accept?.total, t.history.length, t.deep?.state].join('|');
+  window.openTaskModal = function (id) {
+    const t = Flow.task(id); if (!t) return toast('任务已归档');
+    const m = openModal(taskModalHtml(t));
+    m.classList.add('wide'); m.dataset.task = id; m.dataset.sig = taskSig(t);
+    bindTaskModal(m, t);
+  };
+  function bindTaskModal(m, t) {
+    const id = t.id, on = (sel, fn) => { const el = $(sel, m); if (el) el.onclick = fn; };
+    $$('[data-close]', m).forEach((b) => (b.onclick = closeOverlay));
+    on('#tm-real', () => { t.real = true; t.status = 'queued'; t.progress = 0; t.age = 0; t.trace = []; t.plan = null; t.evidence = null; saveState(); Flow.refresh(); toast('已交给 Genspark 真实执行'); openTaskModal(id); });
     on('#tm-retry', () => { Flow.retryTask(t); toast('已重新排队'); closeOverlay(); });
     on('#tm-copy', () => { navigator.clipboard?.writeText(t.output || ''); toast('已复制成果'); });
     on('#tm-pass', () => { Flow.passTask(t); openTaskModal(id); });
-    on('#tm-redo', () => { const fb = $('#tm-fb', m).value.trim(); if (!fb) return toast('请写下修改意见'); if (Flow.reworkTask(t, fb)) { toast('已打回，Agent 将按意见返工'); closeOverlay(); } });
+    on('#tm-redo', () => { const fb = $('#tm-fb', m).value.trim(); if (!fb) return toast('请写下修改意见'); if (Flow.reworkTask(t, fb)) { toast('已打回，按意见返工'); closeOverlay(); } });
     on('#tm-deep', () => window.AI && AI.deepAgent(t));
-  };
+  }
+  // 执行中实时刷新打开的任务详情（输入时不打扰）
+  function refreshTaskModal() {
+    const m = $('.modal[data-task]'); if (!m) return;
+    const t = Flow.task(m.dataset.task); if (!t) return;
+    const sig = taskSig(t); if (sig === m.dataset.sig) return;
+    if (m.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    const sc = m.scrollTop; m.innerHTML = taskModalHtml(t); m.dataset.sig = sig; m.scrollTop = sc; bindTaskModal(m, t);
+  }
 
   // ====================== 数字孪生（等距视图，按流程排布） ======================
   const iso = (gx, gy) => ({ x: isoCtx.OX + (gx - gy) * TW / 2, y: isoCtx.OY + (gx + gy) * TH / 2 });
@@ -397,10 +409,10 @@
   }
   function zoneList() {
     const specials = [
-      { id: 'boss', name: '① 老板办公室', icon: 'fa-crown', color: '#ffd54f', special: true },
-      { id: 'brain', name: '② 智脑中枢', icon: 'fa-brain', color: '#3ee0ff', special: true },
-      { id: 'qa', name: '③ 质检中心', icon: 'fa-clipboard-check', color: '#ffb547', special: true },
-      { id: 'kb', name: '④ 知识库', icon: 'fa-book', color: '#b69bff', special: true }
+      { id: 'boss', name: '① 老板办公室', icon: 'fa-crown', color: '#d97706', special: true },
+      { id: 'brain', name: '② 智脑中枢', icon: 'fa-brain', color: '#2563eb', special: true },
+      { id: 'qa', name: '③ 质检中心', icon: 'fa-clipboard-check', color: '#d97706', special: true },
+      { id: 'kb', name: '④ 知识库', icon: 'fa-book', color: '#7c3aed', special: true }
     ];
     return [...specials, ...S.depts].map((z, i) => ({ ...z, col: i % COLS, row: Math.floor(i / COLS) }));
   }
@@ -416,7 +428,7 @@
     svg += poly([g0, g1, g2, g3], 'rgba(30,50,100,.25)', 'rgba(120,170,255,.25)');
     // 指挥链：老板 → 智脑 → 质检 → 知识库（顶排），智脑 → 各部门
     const zb = (id) => zones.find((z) => z.id === id);
-    [['boss', 'brain'], ['brain', 'qa'], ['qa', 'kb']].forEach(([a, b]) => { const A = zb(a), B = zb(b); svg += `<path d="M${A.cx} ${A.cy} L${B.cx} ${B.cy}" stroke="#ffd54f" stroke-opacity=".55" stroke-width="2.5" fill="none" class="flow"/>`; });
+    [['boss', 'brain'], ['brain', 'qa'], ['qa', 'kb']].forEach(([a, b]) => { const A = zb(a), B = zb(b); svg += `<path d="M${A.cx} ${A.cy} L${B.cx} ${B.cy}" stroke="#d97706" stroke-opacity=".55" stroke-width="2.5" fill="none" class="flow"/>`; });
     const brain = zb('brain');
     zones.filter((z) => !z.special).forEach((z) => { svg += `<path d="M${brain.cx} ${brain.cy} Q${(brain.cx + z.cx) / 2} ${Math.min(brain.cy, z.cy) - 60} ${z.cx} ${z.cy}" stroke="${z.color}" stroke-opacity=".25" stroke-width="1.3" fill="none" id="lk-${z.id}"/>`; });
     zones.forEach((z) => {
@@ -434,7 +446,7 @@
     main.innerHTML = `<div class="iso-wrap" id="iso-wrap"><div class="iso-world" id="iso-world" style="width:${W}px;height:${H}px"><svg width="${W}" height="${H}">${svg}</svg></div>
       <div class="iso-hud"><button class="btn btn-ghost btn-sm glass" id="fit"><i class="fas fa-expand"></i>全景</button><button class="btn btn-ghost btn-sm glass" id="zin"><i class="fas fa-plus"></i></button><button class="btn btn-ghost btn-sm glass" id="zout"><i class="fas fa-minus"></i></button></div>
       <div class="boss-brief glass" id="brief"></div>
-      <div class="iso-legend glass"><span><i class="fas fa-crown" style="color:#ffd54f"></i>老板</span><span><span class="st-dot" style="background:#ff7043"></span>员工</span><span><i class="fas fa-robot" style="color:var(--c1)"></i>Agent（亮起=处理中）</span><span><span class="st-dot" style="background:#ffd54f"></span>指挥链</span><span class="dim">顶排按流程：老板 → 智脑 → 质检 → 知识库；只有收到指令的部门才会运转</span></div></div>`;
+      <div class="iso-legend glass"><span><i class="fas fa-crown" style="color:#d97706"></i>老板</span><span><span class="st-dot" style="background:#ff7043"></span>员工</span><span><i class="fas fa-robot" style="color:var(--c1)"></i>Agent（亮起=处理中）</span><span><span class="st-dot" style="background:#d97706"></span>指挥链</span><span class="dim">顶排按流程：老板 → 智脑 → 质检 → 知识库；只有收到指令的部门才会运转</span></div></div>`;
     const world = $('#iso-world');
     zones.forEach((z) => { const top = iso(z.gx, z.gy); const el = document.createElement('div'); el.className = 'zone-label'; el.style.left = top.x + 'px'; el.style.top = (top.y - WALL - 6) + 'px'; el.style.setProperty('--zc', z.color); el.id = 'zl-' + z.id; world.appendChild(el); });
     const add = (id, cls, html, gx, gy, title) => { const p = iso(gx, gy); const el = document.createElement('div'); el.className = 'actor ' + cls; el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; el.style.zIndex = Math.round(p.y); el.innerHTML = `<div class="body">${html}</div>`; el.title = title || ''; world.appendChild(el); isoCtx.actors[id] = { el, gx, gy, home: [gx, gy] }; return el; };
@@ -495,7 +507,7 @@
     const brief = $('#brief'); if (!brief) return;
     const c = Flow.cmd(Flow.focus) || Flow.active()[0];
     const pend = S.sim.approvals.filter((x) => x.status === 'pending');
-    brief.innerHTML = `<div class="flex between"><span class="h3"><i class="fas fa-crown" style="color:#ffd54f"></i> 老板视角</span><span class="dim" style="font-size:11px">D${S.sim.day} ${simTime()}</span></div>
+    brief.innerHTML = `<div class="flex between"><span class="h3"><i class="fas fa-crown" style="color:#d97706"></i> 老板视角</span><span class="dim" style="font-size:11px">D${S.sim.day} ${simTime()}</span></div>
       ${c ? `<div class="mt" style="font-size:12px"><b style="color:${c.color}">#${c.no}</b> ${esc(c.text)}</div>${stepDots(c, true)}<div class="hint">${cmdStageLabel(c)}</div>` : '<div class="hint mt">暂无指令，全体待命。在右侧下达指令后，可在这里看到它沿指挥链流转。</div>'}
       ${pend.length ? `<button class="btn btn-sm mt" style="width:100%;justify-content:center;background:rgba(255,181,71,.15);border:1px solid var(--warn);color:var(--warn)" onclick="gotoView('approve')"><i class="fas fa-shield-halved"></i>${pend.length} 项待您审批</button>` : ''}`;
   }
