@@ -6,7 +6,7 @@
   const short = (s, n = 16) => esc(String(s || '').slice(0, n)) + (String(s || '').length > n ? '…' : '');
   const ST = { queued: ['待执行', 'p'], exec: ['执行中', ''], rework: ['返工中', 'warn'], verify: ['校验中', 'warn'], pack: ['出汇报材料', ''], approval: ['待审批', 'warn'], review: ['人工复核', 'bad'], done: ['已交付', 'ok'], rejected: ['已取消', 'bad'] };
   window.TASK_ST = ST;
-  const CMD_ST = { plan: '拆解中', confirm: '待老板确认方案', accept: '指令验收中', improve: '复盘提升中', done: '已完成', cancelled: '已取消' };
+  const CMD_ST = { plan: '拆解中', research: '深度研究中', strategy: '发展规划中', feasibility: '可行性校验中', confirm: '待老板决策', accept: '指令验收中', improve: '复盘提升中', done: '已完成', cancelled: '已取消' };
 
   // ====================== 主循环（时钟只驱动机制检查点，不制造工作） ======================
   function tick() {
@@ -37,6 +37,7 @@
     { k: 'ledger', i: 'fa-sack-dollar', n: '价值账本' },
     { k: 'org', i: 'fa-sitemap', n: '组织人才' },
     { k: 'masters', i: 'fa-user-tie', n: '大师智库' },
+    { k: 'models', i: 'fa-sliders', n: '模型配置' },
     { k: 'archive', i: 'fa-box-archive', n: '项目档案' }
   ];
   const QUICK = ['本月全网找一批新订单', '降低主要原料采购成本', '做一波品牌宣传', '催收逾期应收账款', '招聘两名销售骨干'];
@@ -152,7 +153,7 @@
     if (sig === sideSig) return; sideSig = sig;
     $('#cmdq-count').textContent = `${Flow.active().length} 进行中 · ${S.sim.routines.length} 例行`;
     $$('#log-seg button').forEach((b) => b.classList.toggle('on', b.dataset.s === logScope));
-    if (!list.length) { box.innerHTML = `<div class="cmdq-empty"><i class="fas fa-mug-hot"></i><div>暂无指令，全体 Agent 待命</div><div class="dim">下达指令后：拆解 → 方案确认 → 分发 → 执行 → 校验 → 审批 → 交付 → 复盘提升</div></div>`; return; }
+    if (!list.length) { box.innerHTML = `<div class="cmdq-empty"><i class="fas fa-mug-hot"></i><div>暂无指令，全体 Agent 待命</div><div class="dim">下达指令后：深度研究 → 发展规划 → 可行性校验 → 老板决策 → 部门执行 → 验收 → 审批 → 交付汇报 → 复盘归档</div></div>`; return; }
     box.innerHTML = list.map((c) => {
       const ts = c.taskIds.map(Flow.task).filter(Boolean);
       const done = ts.filter((t) => t.status === 'done').length, rw = ts.filter((t) => t.status === 'rework').length, ap = S.sim.approvals.filter((a) => a.cmdId === c.id && a.status === 'pending').length;
@@ -236,6 +237,9 @@
   function renderBoard(main) {
     main.innerHTML = `<section class="cc" id="cc"><div class="cc-pipe" id="cc-pipe"></div><div class="cc-body" id="cc-body"></div></section>`;
     $('#cc').onclick = (e) => {
+      const pk = e.target.closest('[data-pick]'); if (pk) { e.stopPropagation(); return Flow.pick(pk.dataset.cmdid, pk.dataset.pick); }
+      const dc = e.target.closest('[data-decide]'); if (dc) { e.stopPropagation(); const c = Flow.cmd(dc.dataset.decide); const k = c?.pick || c?.strategy?.recommend; toast(`已决策：方案 ${k || ''}，分发到部门执行`, 'fa-crown'); return Flow.decide(dc.dataset.decide, k); }
+      const rj = e.target.closest('[data-replan]'); if (rj) { e.stopPropagation(); const v = prompt('请写下您对方案的意见，战略官将据此重新规划：', ''); if (v === null) return; const ap = S.sim.approvals.find((a) => a.cmdId === rj.dataset.replan && a.kind === 'plan' && a.status === 'pending'); if (ap) decideApproval(ap.id, false, v.trim() || '方案不满意，请重新规划'); return; }
       const rv = e.target.closest('[data-rv]'); if (rv) { e.stopPropagation(); return openReport(rv.dataset.rv, rv.dataset.tab); }
       const bf = e.target.closest('[data-brief]'); if (bf) { e.stopPropagation(); return briefCmd(bf.dataset.brief); }
       const r = e.target.closest('[data-t]'); if (r) return openTaskModal(r.dataset.t);
@@ -248,7 +252,7 @@
     updateBoard(true);
   }
   function boardSignature() {
-    return [S.sim.commands.map((c) => c.id + c.stage + c.taskIds.length).join(), S.sim.tasks.map((t) => t.id + t.status + (t.step || '') + (t.trace?.length || 0) + (t.trace?.filter((e) => e.status === 'run').length || 0) + t.esc + (t.paused ? 'p' : '') + t.rework + (t.accept?.total || '') + (t.pack ? 'k' + (t.pack.slides || []).filter((s) => s.url || !s.pending).length : '')).join(), Object.values(S.masters || {}).map((m) => m.name).join(), S.sim.approvals.filter((a) => a.status === 'pending').length, Flow.focus, S.staff.map((s) => s.tier || '').join(''), S.agents.map((a) => a.status[0]).join('')].join('|');
+    return [S.sim.commands.map((c) => c.id + c.stage + c.taskIds.length + (c.trace?.length || 0) + (c.trace?.filter((e) => e.status === 'run').length || 0) + (c.pick || '') + (c.strategy?.v || '') + (c.feas?.total || '') + (c.decisionEval?.score || '')).join(), S.sim.tasks.map((t) => t.id + t.status + (t.step || '') + (t.trace?.length || 0) + (t.trace?.filter((e) => e.status === 'run').length || 0) + t.esc + (t.paused ? 'p' : '') + t.rework + (t.accept?.total || '') + (t.pack ? 'k' + (t.pack.slides || []).filter((s) => s.url || !s.pending).length : '')).join(), Object.values(S.masters || {}).map((m) => m.name).join(), S.sim.approvals.filter((a) => a.status === 'pending').length, Flow.focus, S.staff.map((s) => s.tier || '').join(''), S.agents.map((a) => a.status[0]).join('')].join('|');
   }
   function updateBoard(force) {
     const body = $('#cc-body'); if (!body) return;
@@ -265,10 +269,63 @@
   function emptyHero() {
     return `<div class="hero">
       <div class="hero-l"><div class="h2"><i class="fas fa-crown" style="color:var(--gold)"></i> 一切工作从老板指令开始</div>
-        <p class="muted mt">在右侧输入一句话指令，智脑拆解为部门任务，并按<b>能力级别</b>匹配负责人；每个人调用自己权限内的 Genspark 工具组合完成工作，每一步都记录在<b>执行表</b>里，最后由独立验收官逐条核对验收标准。</p>
-        <div class="hero-flow mt">${['下达指令', '拆解 + 定级', '匹配负责人', '调用工具', '撰写成果', '逐条验收', '审批交付'].map((x, i) => `${i ? '<i class="fas fa-arrow-right"></i>' : ''}<span>${x}</span>`).join('')}</div></div>
+        <p class="muted mt">在右侧输入一句话指令：智脑先做<b>深度研究</b>（全网真实数据 + 数据边界），再由战略官给出 <b>3 套创意方案</b>，经<b>可行性七维校验</b>后由您拍板；各部门大师按选定方案执行，产出 Word / Excel / 创意 PPT，独立验收打分，最后复盘评估<b>您的决策见效</b>。</p>
+        <div class="hero-flow mt">${['下达指令', '深度研究', '3 套方案', '可行性校验', '老板决策', '部门执行', '验收评分', '汇报 + 复盘'].map((x, i) => `${i ? '<i class="fas fa-arrow-right"></i>' : ''}<span>${x}</span>`).join('')}</div></div>
       <div class="hero-r">${TIER_ORDER.map((k) => { const T = TIERS[k]; return `<div class="tier-card" style="--tc:${T.color};--tb:${T.bg}"><div class="flex between">${tierBadge(k)}<span class="dim" style="font-size:11px">${T.model} · 门槛 ${T.pass}</span></div><div class="hint" style="margin:6px 0">${T.desc}</div><div class="tl-row">${T.tools.map((x) => `<span class="tl ok" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span><small>${toolMeta(x).name}</small>`).join('')}</div><div class="dim" style="font-size:11px;margin-top:6px">本企业 ${S.staff.filter((s) => tierOf(s) === k).length} 人</div></div>`; }).join('')}</div>
     </div>` + orgStrip();
+  }
+  // ---------- 决策室：深度研究 → 发展规划（3 方案）→ 可行性校验 → 老板决策 ----------
+  const VERD = { go: ['可落地', 'ok'], revise: ['需修订', 'warn'], nogo: ['不可行', 'bad'] };
+  function planRoom(c, compact) {
+    const R = c.research, ST = c.strategy, FS = c.feas; if (!R && !ST) return '';
+    const deciding = c.stage === 'confirm', chosen = c.decision?.key, sel = deciding ? (c.pick || ST?.recommend) : chosen;
+    const conf = { high: '高', mid: '中', low: '低' };
+    const res = R ? `<section class="pr-col pr-res"><h4><i class="fas fa-magnifying-glass-chart"></i>深度研究${R.sim ? ' <span class="tag p">仿真</span>' : ''}<small>${(R.sources || []).length} 条来源</small></h4>
+      <p class="pr-sum">${esc(R.summary)}</p>
+      ${(R.data || []).length ? `<div class="pr-data">${R.data.slice(0, compact ? 4 : 10).map((d) => `<span class="cf-${d.confidence}" title="来源：${esc(d.source)} · 可信度${conf[d.confidence]}"><b>${esc(d.value)}</b><small>${esc(d.metric)}</small></span>`).join('')}</div>` : ''}
+      ${(R.boundaries || []).length ? `<div class="pr-bd"><b><i class="fas fa-ruler-combined"></i> 真实数据边界</b>${R.boundaries.slice(0, compact ? 3 : 5).map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>` : ''}
+      ${!compact && (R.findings || []).length ? `<div class="pr-find">${R.findings.map((f) => `<div class="${f.kind}"><span class="tag ${f.kind === 'fact' ? 'ok' : 'p'}">${f.kind === 'fact' ? '事实' : '推断'}</span>${esc(f.text)}${f.src.length ? `<small>${f.src.map((n) => { const s2 = R.sources?.[n - 1]; return s2 ? `<a href="${esc(s2.url)}" target="_blank" rel="noopener">[${n}]</a>` : `[${n}]`; }).join('')}</small>` : ''}</div>`).join('')}</div>` : ''}
+      ${!compact && (R.gaps || []).length ? `<div class="hint mt"><b>信息缺口：</b>${esc(R.gaps.join('；'))}</div>` : ''}</section>` : '';
+    const opt = ST ? `<section class="pr-col pr-st"><h4><i class="fas fa-chess-queen"></i>发展规划 v${ST.v}${ST.sim ? ' <span class="tag p">仿真</span>' : ''}<small>AI 推荐 ${ST.recommend}</small></h4>
+      <p class="pr-thesis">${esc(ST.thesis)}</p>
+      <div class="pr-opts">${(ST.options || []).map((o) => { const ov = FS?.optionsView?.find((x) => x.key === o.key); return `<div class="pr-opt ${sel === o.key ? 'on' : ''} ${deciding ? 'pickable' : ''}" ${deciding ? `data-pick="${o.key}" data-cmdid="${c.id}"` : ''}>
+        <div class="flex between"><b><span class="ok-key">${o.key}</span>${esc(o.name)}</b>${o.key === ST.recommend ? '<span class="tag ok">AI 推荐</span>' : ''}${chosen === o.key && !deciding ? '<span class="tag warn">老板选定</span>' : ''}</div>
+        <p>${esc(o.idea)}</p>
+        <div class="pr-kv"><span>投入<b>${esc(o.invest)}</b></span><span>回报<b>${esc(o.return)}</b></span><span>周期<b>${esc(o.period)}</b></span></div>
+        <div class="pr-risk"><i class="fas fa-triangle-exclamation"></i>${esc(o.risk)}${ov ? `<em>评审 ${ov.score}</em>` : ''}</div></div>`; }).join('')}</div>
+      ${(ST.targets || []).length ? `<table class="pr-tg"><tr><th>量化目标</th><th>基线</th><th>目标</th><th>依据</th></tr>${ST.targets.slice(0, compact ? 3 : 6).map((t) => `<tr><td>${esc(t.kpi)}</td><td>${esc(t.base)}</td><td><b>${esc(t.target)}</b></td><td class="dim">${esc(t.basis)}</td></tr>`).join('')}</table>` : ''}
+      ${!compact && (ST.milestones || []).length ? `<div class="pr-ms">${ST.milestones.map((m) => `<span><b>${esc(m.when)}</b>${esc(m.what)}<small>${esc(m.owner)}</small></span>`).join('')}</div>` : ''}
+      ${!compact && (ST.notdo || []).length ? `<div class="hint mt"><b>明确不做：</b>${esc(ST.notdo.join('；'))}</div>` : ''}</section>` : '';
+    const v = FS ? VERD[FS.verdict] || ['—', 'p'] : null;
+    const fea = FS ? `<section class="pr-col pr-fs"><h4><i class="fas fa-scale-balanced"></i>可行性校验${FS.sim ? ' <span class="tag p">仿真</span>' : ''}<small>${(c.feasHist || []).length > 1 ? c.feasHist.map((h) => h.total).join(' → ') : ''}</small></h4>
+      <div class="fs-top"><div class="fs-ring ${v[1]}" style="--p:${FS.total}"><b>${FS.total}</b><small>/100</small></div><div><span class="tag ${v[1]}">${v[0]}</span><p>${esc(FS.summary)}</p></div></div>
+      <div class="fs-dims">${(FS.dims || []).map((d) => `<div title="${esc(d.note)}"><span>${d.name}</span><i><em style="width:${d.score}%;${d.score < 70 ? 'background:#f59e0b' : ''}"></em></i><b>${d.score}</b></div>`).join('')}</div>
+      ${(FS.issues || []).length ? `<div class="fs-iss">${FS.issues.slice(0, compact ? 2 : 8).map((x) => `<div class="lv-${x.level}"><b>${{ high: '高', mid: '中', low: '低' }[x.level]}</b>${esc(x.text)}${!compact ? `<small>→ ${esc(x.fix)}</small>` : ''}</div>`).join('')}</div>` : ''}
+      ${!compact && (FS.assumptions || []).length ? `<div class="hint mt"><b>需验证的关键假设：</b>${esc(FS.assumptions.join('；'))}</div>` : ''}</section>` : '';
+    const dec = deciding && ST ? `<div class="pr-decide"><i class="fas fa-crown"></i><div><b>老板决策</b><small>点选一个方案（默认 AI 推荐 ${ST.recommend}）。选择与推荐不同的方案时，战略官会以您的选择为主线重排部门任务。</small></div><button class="btn btn-ghost btn-sm" data-replan="${c.id}"><i class="fas fa-rotate-left"></i>提意见重做</button><button class="btn btn-pri" data-decide="${c.id}"><i class="fas fa-check"></i>采用方案 ${sel} 并分发</button></div>`
+      : c.decision && ST ? `<div class="pr-done"><i class="fas fa-crown"></i> 老板${c.decision.auto ? '（自动）' : ''}选定方案 <b>${c.decision.key}「${esc(c.decision.name)}」</b>${c.decision.follow ? ' · 采纳 AI 推荐' : ` · AI 推荐 ${c.decision.recommended}`} · 可行性 ${c.decision.feas ?? '-'} 分${c.decisionEval ? ` · <b class="ok">决策见效 ${c.decisionEval.score} 分</b>：${esc(c.decisionEval.effect)}` : ''}<a class="lnk" data-cmd="${c.id}" style="margin-left:auto">完整研究与规划 →</a></div>` : '';
+    return `<div class="plan-room ${compact ? 'compact' : ''}">${res}${opt}${fea}</div>${dec}`;
+  }
+  window.planRoom = planRoom;
+  // ---------- 各部门执行结果与完成评分 ----------
+  function resultsGrid(c, ts) {
+    if (!ts.length) return '';
+    const scored = ts.filter((t) => t.accept || t.evals), avg = scored.length ? Math.round(scored.reduce((a, t) => a + (t.accept?.total ?? t.evals?.total ?? 0), 0) / scored.length) : 0;
+    const done = ts.filter((t) => t.status === 'done').length, pct = Math.round(done / ts.length * 100);
+    const card = (t) => {
+      const d = deptOf(t.deptId), P = window.Masters?.get(t.deptId), sc = t.accept?.total ?? t.evals?.total, th = t.accept?.threshold || TIERS[t.tier]?.pass || 80;
+      const sl = (t.pack?.slides || []).find((x) => x.url) || (t.pack?.slides || [])[0];
+      const sum = t.pack?.doc?.summary || String(t.output || '').replace(/^[\s\S]*?##\s*结论\s*/, '').replace(/[#>*`|]/g, '').replace(/\s+/g, ' ').slice(0, 90);
+      return `<article class="rs-card st-${t.status}" data-t="${t.id}" style="--dc:${d?.color}">
+        <div class="rs-thumb">${sl ? Office.slideHTML(sl, { color: d?.color }) : `<div class="rs-ph"><i class="fas ${d?.icon}"></i><small>${(TASK_ST[t.status] || ['—'])[0]}</small></div>`}${sc != null ? `<span class="rs-sc ${sc >= th ? 'ok' : 'no'}">${sc}</span>` : ''}</div>
+        <div class="rs-bd"><div class="flex between"><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span><span class="tag ${(TASK_ST[t.status] || [, 'p'])[1]}">${(TASK_ST[t.status] || ['—'])[0]}</span></div>
+          <b class="rs-t">${esc(t.pack?.doc?.title || t.title)}</b>${t.link ? `<small class="rs-link"><i class="fas fa-link"></i>承接：${esc(t.link)}</small>` : ''}
+          <p>${esc(sum || (['exec', 'rework'].includes(t.status) ? '执行中…' : t.status === 'queued' ? '已分发，等待执行' : ''))}</p>
+          <div class="flex between"><span class="dim" style="font-size:11px">${P ? esc(P.title) : ''}${t.accept ? ` · ${t.accept.met}/${t.accept.items.length} 条达标` : ''}</span>${t.pack ? `<span class="doc3"><button data-rv="${t.id}" data-tab="doc" class="w"><i class="fas fa-file-word"></i></button><button data-rv="${t.id}" data-tab="xls" class="x"><i class="fas fa-file-excel"></i></button><button data-rv="${t.id}" data-tab="ppt" class="p"><i class="fas fa-file-powerpoint"></i></button></span>` : ''}</div></div></article>`;
+    };
+    return `<div class="rs-wrap"><div class="rs-hd"><span class="h3"><i class="fas fa-ranking-star" style="color:var(--c1)"></i> 各部门执行结果</span>
+      <div class="rs-kpi"><span>完成 <b>${done}/${ts.length}</b><i class="bar"><em style="width:${pct}%"></em></i></span><span>平均验收 <b class="${avg >= 85 ? 'ok' : avg ? 'warn' : ''}">${avg || '—'}</b></span>${c.feas ? `<span>方案可行性 <b>${c.feas.total}</b></span>` : ''}${c.acceptance ? `<span>指令验收 <b class="ok">${c.acceptance.score}</b></span>` : ''}${c.decisionEval ? `<span>决策见效 <b class="ok">${c.decisionEval.score}</b></span>` : ''}</div></div>
+      <div class="rs-grid">${ts.map(card).join('')}</div></div>`;
   }
   function cmdPanel(c, open) {
     const st = Flow.cmdSteps(c), ts = c.taskIds.map(Flow.task).filter(Boolean);
@@ -277,7 +334,9 @@
     const calls = ts.reduce((n, t) => n + (t.trace || []).filter((e) => e.step === 'tool' && e.status === 'ok').length, 0);
     const srcs = ts.reduce((n, t) => n + (t.evidence?.length || 0), 0);
     const steps = `<div class="stepper">${FLOW_STAGES.map((s, i) => `<div class="stp ${st[i]} ${s.gate ? 'gate' : ''}"><span class="dot">${st[i] === 'done' ? '<i class="fas fa-check"></i>' : i + 1}</span><b>${s.n}</b><small>${s.who}</small></div>`).join('')}</div>`;
-    const hint = c.stage === 'confirm' ? `<div class="cmd-alert"><i class="fas fa-stamp"></i> 闸门①：方案已拆解为 ${c.plan.length} 项，等待您确认后分发 <button class="btn btn-pri btn-sm" data-cmd="${c.id}">查看并确认</button></div>` : c.stage === 'plan' ? `<div class="cmd-alert info"><i class="fas fa-spinner fa-spin"></i> 智脑正在拆解指令、为每项任务定能力级别…</div>` : '';
+    const runE = (c.trace || []).filter((e) => e.status === 'run').slice(-1)[0];
+    const PREP = { research: '深度研究员正在拆解指令本质、全网检索真实数据…', strategy: '首席战略官正在制定 3 套差异化创意方案…', feasibility: '可行性评审正在七维挑毛病：数据 / 资源 / 财务 / 时间 / 风险 / 合规 / 落地…', plan: '智脑正在拆解指令…' };
+    const hint = c.stage === 'confirm' && !c.strategy ? `<div class="cmd-alert"><i class="fas fa-stamp"></i> 方案已拆解为 ${c.plan.length} 项，等待您确认后分发 <button class="btn btn-pri btn-sm" data-decide="${c.id}">确认分发</button></div>` : PREP[c.stage] ? `<div class="cmd-alert info"><i class="fas fa-spinner fa-spin"></i> ${PREP[c.stage]}${runE ? `<span class="dim" style="margin-left:6px">${esc(runE.label || '')}：${esc(String(runE.detail || '').slice(0, 60))}</span>` : ''}</div>` : '';
     const rows = (ts.length ? ts : []).map((t) => {
       const d = deptOf(t.deptId), o = ownerOf(t), stt = ST[t.status] || ['—', 'p'];
       return `<tr class="exec-row rs-${t.status}" data-t="${t.id}" data-row-dept="${t.deptId}">
@@ -301,8 +360,9 @@
         <button class="btn btn-ghost btn-sm" data-cmd="${c.id}"><i class="fas fa-up-right-from-square"></i>指令详情</button>
         <i class="fas fa-chevron-down fold"></i>
       </header>
-      ${open ? `${steps}${hint}
+      ${open ? `${steps}${hint}${planRoom(c, true)}
       ${ts.length || planRows ? `<table class="exec-table"><thead><tr><th>部门</th><th>任务 / 交付物</th><th>负责人</th><th>能力级别</th><th>调用工具组合</th><th>执行步骤</th><th>验收</th><th>汇报材料</th><th>状态</th></tr></thead><tbody>${rows || planRows}</tbody></table>` : ''}
+      ${resultsGrid(c, ts)}
       ${ts.some((t) => t.pack) ? `<div class="cp-brief"><i class="fas fa-person-chalkboard"></i> 已有 <b>${ts.filter((t) => t.pack).length}</b> 个部门交出汇报材料（Word + Excel + 创意 PPT）<button class="btn btn-pri btn-sm" data-brief="${c.id}"><i class="fas fa-play"></i>召开部门汇报会</button>${c.archiveId ? `<button class="btn btn-ghost btn-sm" data-gate="archive"><i class="fas fa-box-archive"></i>已归档 · 查看档案</button>` : ''}</div>` : ''}
       ${c.acceptance ? `<div class="cp-acc"><i class="fas fa-clipboard-check"></i> 指令验收 <b>${c.acceptance.score}</b> 分 · ${{ achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict] || ''} · ${esc(c.acceptance.summary || '')}</div>` : ''}` : `<div class="cp-mini">${steps}</div>`}
     </article>`;
@@ -333,15 +393,18 @@
     const m = openModal(`<div class="flex"><div class="cmd-no" style="--cc:${c.color}">#${c.no}</div><div style="min-width:0;flex:1"><div class="h2" style="font-size:17px">${esc(c.text)}</div><div class="hint"><span style="color:${sc}">${sl}指令</span> · 第 ${c.iteration} 轮 · D${c.day} ${c.t} 下达 · ${c.real ? '<span style="color:var(--ok)">Genspark 真实执行</span>' : '仿真执行'}${parent ? ` · 上一轮 <a class="lnk" onclick="openCmdModal('${parent.id}')">#${parent.no}</a>` : ''}</div></div><button class="close-x" data-close><i class="fas fa-xmark"></i></button></div>
       <div class="cmd-steps mt">${FLOW_STAGES.map((s, i) => `<div class="cs ${st[i]} ${s.gate ? 'gate' : ''}" style="--cc:${c.color}"><i class="fas ${s.i}"></i><b>${s.n}</b><small>${s.who}</small></div>`).join('')}</div>
       ${c.goal ? `<div class="card mt" style="padding:12px"><b>目标：</b>${esc(c.goal)}${c.feedback ? `<div class="hint mt" style="white-space:pre-line">${esc(c.feedback)}</div>` : ''}</div>` : ''}
-      ${pendPlan ? `<div class="card mt" style="border-color:var(--warn)"><div class="h3" style="color:var(--warn)"><i class="fas fa-stamp"></i> 闸门① 方案确认</div><div class="hint mt">确认后才会分发到部门；驳回会带着你的意见重新拆解。</div><div class="flex mt"><input id="cm-fb" placeholder="驳回意见（可选）" style="flex:1"><button class="btn btn-danger btn-sm" id="cm-rej">驳回重拆</button><button class="btn btn-pri btn-sm" id="cm-ok"><i class="fas fa-check"></i>确认分发</button></div></div>` : ''}
+      ${c.research || c.strategy ? `<div class="card mt cm-room" style="padding:12px">${planRoom(c, false)}</div>` : ''}
+      ${(c.trace || []).length ? `<div class="card mt"><div class="h3"><i class="fas fa-route" style="color:var(--c1)"></i> 研究与规划执行记录</div><table class="trace-tb mt"><tbody>${c.trace.map((e) => `<tr class="st-${e.status}"><td class="mono">${esc(e.at)}</td><td><b>${esc(e.label || e.step)}</b></td><td>${e.tool ? `<span class="tl ok"><i class="fas ${toolMeta(e.tool).icon}"></i></span>` : ''} ${esc(e.model || '')}</td><td>${esc(e.detail || '')}${e.sim ? ' <span class="tag p">仿真</span>' : ''}${(e.sources || []).length ? `<div class="tr-src">${e.sources.map((x, i) => `<a href="${esc(x.url)}" target="_blank" rel="noopener"><b>${i + 1}.</b> ${esc(x.title)}</a>`).join('')}</div>` : ''}</td><td class="mono">${e.ms ? (e.ms / 1000).toFixed(1) + 's' : ''}</td><td>${e.status === 'run' ? '<i class="fas fa-spinner fa-spin" style="color:var(--c1)"></i>' : e.status === 'fail' ? '<i class="fas fa-circle-xmark" style="color:var(--bad)"></i>' : '<i class="fas fa-circle-check" style="color:var(--ok)"></i>'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${pendPlan && !c.strategy ? `<div class="card mt" style="border-color:var(--warn)"><div class="h3" style="color:var(--warn)"><i class="fas fa-stamp"></i> 闸门① 方案确认</div><div class="hint mt">确认后才会分发到部门；驳回会带着你的意见重新拆解。</div><div class="flex mt"><input id="cm-fb" placeholder="驳回意见（可选）" style="flex:1"><button class="btn btn-danger btn-sm" id="cm-rej">驳回重拆</button><button class="btn btn-pri btn-sm" id="cm-ok"><i class="fas fa-check"></i>确认分发</button></div></div>` : ''}
       <div class="card mt"><div class="ct"><span class="h3">拆解方案与执行（${c.plan.length} 项）</span><span class="dim" style="font-size:11px">点击任务查看成果</span></div>
-        <table class="table"><tr><th>部门</th><th>任务</th><th>交付物</th><th>状态</th><th>校验</th><th>返工</th></tr>
+        <table class="table"><tr><th>部门</th><th>任务</th><th>交付物</th><th>状态</th><th>验收</th><th>返工</th></tr>
         ${(ts.length ? ts : c.plan).map((x) => { const t = ts.length ? x : null; const d = deptOf(x.deptId); return `<tr ${t ? `style="cursor:pointer" onclick="openTaskModal('${t.id}')"` : ''}><td><i class="fas ${d?.icon}" style="color:${d?.color}"></i> ${esc(d?.name || '')}</td><td>${esc(x.title)}${x.needApproval ? ' <span class="tag warn" style="font-size:10px">高风险</span>' : ''}</td><td class="dim">${esc((x.deliverable || '').slice(0, 26))}</td><td>${t ? `<span class="tag ${ST[t.status][1]}">${ST[t.status][0]}</span>` : '<span class="tag p">待分发</span>'}</td><td>${t?.evals ? `<b style="color:${t.evals.total >= 80 ? 'var(--ok)' : 'var(--warn)'}">${t.evals.total}</b>` : '-'}</td><td>${t?.rework || 0}</td></tr>`; }).join('')}</table></div>
       ${c.acceptance ? `<div class="grid2 mt"><div class="card"><div class="ct"><span class="h3"><i class="fas fa-clipboard-check" style="color:var(--c1)"></i> 指令验收</span><b class="grad-txt" style="font-size:24px">${c.acceptance.score}</b></div><span class="tag ${c.acceptance.verdict === 'achieved' ? 'ok' : c.acceptance.verdict === 'partial' ? 'warn' : 'bad'}">${{ achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict]}</span><p class="muted mt" style="font-size:13px;line-height:1.7">${esc(c.acceptance.summary)}</p></div>
         <div class="card"><div class="h3"><i class="fas fa-arrow-trend-up" style="color:#7c3aed"></i> 复盘提升</div>
           ${(c.review?.lessons || []).map((l) => `<div style="font-size:12px;margin-top:6px"><i class="fas fa-book" style="color:var(--c2)"></i> ${esc(l)}</div>`).join('') || '<div class="hint mt">无</div>'}
           ${c.review?.promos?.length ? `<div style="font-size:12px;margin-top:8px"><i class="fas fa-ranking-star" style="color:var(--ok)"></i> ${esc(c.review.promos.join('、'))}</div>` : ''}
           ${(c.review?.next || []).length ? `<div class="hint mt">下一轮方向：${esc(c.review.next.join('；'))}</div>` : ''}</div></div>` : ''}
+      ${c.decisionEval ? `<div class="card mt dec-eval"><div class="ct"><span class="h3"><i class="fas fa-crown" style="color:#d97706"></i> 老板决策见效评估</span><b class="grad-txt" style="font-size:24px">${c.decisionEval.score}</b></div><div class="grid3 mt"><div><div class="hint">决策带来的结果</div><div style="font-size:13px">${esc(c.decisionEval.effect)}</div></div><div><div class="hint">距离目标还差</div><div style="font-size:13px">${esc(c.decisionEval.gap)}</div></div><div><div class="hint">下一步最该拍板</div><div style="font-size:13px;font-weight:700;color:#b45309">${esc(c.decisionEval.nextDecision)}</div></div></div></div>` : ''}
       <div class="card mt"><div class="h3">指令操作</div><div class="flex wrap mt">
         ${['done'].includes(c.stage) ? `<input id="cm-iter" placeholder="补充要求（可选），带着复盘结论进入下一轮" style="flex:1;min-width:220px"><button class="btn btn-pri btn-sm" id="cm-next"><i class="fas fa-rotate"></i>迭代下一轮</button>` : ''}
         <button class="btn btn-ghost btn-sm" id="cm-routine"><i class="fas fa-calendar-check"></i>${routine ? '取消每日例行' : '设为每日例行'}</button>
@@ -351,6 +414,9 @@
     m.dataset.cmd = id;
     const on = (sel, fn) => { const el = $(sel, m); if (el) el.onclick = fn; };
     on('#cm-ok', () => { decideApproval(pendPlan.id, true); openCmdModal(id); });
+    $$('[data-pick]', m).forEach((b) => b.onclick = () => { Flow.pick(id, b.dataset.pick); openCmdModal(id); });
+    $$('[data-decide]', m).forEach((b) => b.onclick = () => { Flow.decide(id, c.pick || c.strategy?.recommend); toast('已决策并分发', 'fa-crown'); closeOverlay(); });
+    $$('[data-replan]', m).forEach((b) => b.onclick = () => { const v = prompt('请写下您对方案的意见，战略官将据此重新规划：', ''); if (v === null) return; if (pendPlan) decideApproval(pendPlan.id, false, v.trim() || '方案不满意，请重新规划'); closeOverlay(); });
     on('#cm-rej', () => { decideApproval(pendPlan.id, false, $('#cm-fb', m).value.trim() || '方案不满意，请重新拆解'); openCmdModal(id); });
     on('#cm-next', () => { const n = Flow.iterate(id, $('#cm-iter', m).value.trim()); if (n) { toast(`已进入第 ${n.iteration} 轮：#${n.no}`, 'fa-rotate'); openCmdModal(n.id); } });
     on('#cm-routine', () => { Flow.toggleRoutine(Flow.baseText(c.text), !routine); toast(routine ? '已取消每日例行' : '已设为每日例行：每天 09:00 自动迭代下发', 'fa-calendar-check'); openCmdModal(id); });
@@ -435,7 +501,7 @@
   function zoneList() {
     const specials = [
       { id: 'boss', name: '① 老板办公室', icon: 'fa-crown', color: '#d97706', special: true },
-      { id: 'brain', name: '② 智脑中枢', icon: 'fa-brain', color: '#2563eb', special: true },
+      { id: 'brain', name: '② 研究规划中枢', icon: 'fa-brain', color: '#2563eb', special: true },
       { id: 'qa', name: '③ 质检中心', icon: 'fa-clipboard-check', color: '#d97706', special: true },
       { id: 'kb', name: '④ 知识库', icon: 'fa-book', color: '#7c3aed', special: true }
     ];
@@ -470,10 +536,13 @@
     });
     main.innerHTML = `<div class="iso-wrap" id="iso-wrap"><div class="iso-world" id="iso-world" style="width:${W}px;height:${H}px"><svg width="${W}" height="${H}">${svg}</svg></div>
       <div class="iso-hud"><button class="btn btn-ghost btn-sm glass" id="fit"><i class="fas fa-expand"></i>全景</button><button class="btn btn-ghost btn-sm glass" id="zin"><i class="fas fa-plus"></i></button><button class="btn btn-ghost btn-sm glass" id="zout"><i class="fas fa-minus"></i></button></div>
+      <div class="iso-lane glass" id="iso-lane"></div>
       <div class="boss-brief glass" id="brief"></div>
-      <div class="iso-legend glass"><span><i class="fas fa-crown" style="color:#d97706"></i>老板</span><span><span class="st-dot" style="background:#ff7043"></span>员工</span><span><i class="fas fa-robot" style="color:var(--c1)"></i>Agent（亮起=处理中）</span><span><span class="st-dot" style="background:#d97706"></span>指挥链</span><span class="dim">顶排按流程：老板 → 智脑 → 质检 → 知识库；只有收到指令的部门才会运转</span></div></div>`;
+      <div class="iso-legend glass"><span><i class="fas fa-crown" style="color:#d97706"></i>老板</span><span><span class="st-dot" style="background:#ff7043"></span>员工</span><span><i class="fas fa-robot" style="color:var(--c1)"></i>Agent（亮起=处理中）</span><span><span class="st-dot" style="background:#d97706"></span>指挥链</span><span><i class="fas fa-image" style="color:#ea580c"></i>部门上方 = 本指令成果卡（点击查看汇报）</span><span class="dim">只有收到指令的部门才会运转</span></div></div>`;
     const world = $('#iso-world');
     zones.forEach((z) => { const top = iso(z.gx, z.gy); const el = document.createElement('div'); el.className = 'zone-label'; el.style.left = top.x + 'px'; el.style.top = (top.y - WALL - 6) + 'px'; el.style.setProperty('--zc', z.color); el.id = 'zl-' + z.id; world.appendChild(el); });
+    // 每个部门上方悬浮「本指令成果卡」：执行步骤 → 验收分 → 幻灯片封面
+    zones.filter((z) => !z.special).forEach((z) => { const p = iso(z.gx + Z, z.gy + Z / 2); const el = document.createElement('div'); el.className = 'zone-card'; el.id = 'zc-' + z.id; el.style.left = (p.x + 6) + 'px'; el.style.top = (p.y - 70) + 'px'; el.style.setProperty('--zc', z.color); el.onclick = (e) => { e.stopPropagation(); const t = el.dataset.t && Flow.task(el.dataset.t); if (t?.pack) openReport(t.id, 'ppt'); else if (t) openTaskModal(t.id); }; world.appendChild(el); });
     const add = (id, cls, html, gx, gy, title) => { const p = iso(gx, gy); const el = document.createElement('div'); el.className = 'actor ' + cls; el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; el.style.zIndex = Math.round(p.y); el.innerHTML = `<div class="body">${html}</div>`; el.title = title || ''; world.appendChild(el); isoCtx.actors[id] = { el, gx, gy, home: [gx, gy] }; return el; };
     const bz = zb('boss'), qz = zb('qa'), kz = zb('kb');
     add('boss', 'boss', `<i class="fas fa-crown crown"></i><div class="hd"><i class="fas fa-user-tie"></i></div><div class="tor"></div><div class="sh"></div>`, bz.gx + 2.6, bz.gy + 2.7, '老板');
@@ -510,7 +579,7 @@
     isoCtx.zones.forEach((z) => {
       const el = $('#zl-' + z.id); if (!el) return;
       if (z.special) {
-        const sub = { boss: `待审批 ${S.sim.approvals.filter((a) => a.status === 'pending').length} · 进行中指令 ${Flow.active().length}`, brain: `拆解中 ${S.sim.commands.filter((c) => c.stage === 'plan').length} · 验收中 ${S.sim.commands.filter((c) => c.stage === 'accept').length}`, qa: `校验中 ${T.filter((t) => t.status === 'verify').length} · 今日 ${S.sim.today.verify} 次`, kb: `经验 ${S.sim.knowledge.length} 条` }[z.id];
+        const sub = { boss: `待审批 ${S.sim.approvals.filter((a) => a.status === 'pending').length} · 进行中指令 ${Flow.active().length}`, brain: `研究规划中 ${S.sim.commands.filter((c) => ['plan', 'research', 'strategy', 'feasibility'].includes(c.stage)).length} · 验收中 ${S.sim.commands.filter((c) => c.stage === 'accept').length}`, qa: `校验中 ${T.filter((t) => t.status === 'verify').length} · 今日 ${S.sim.today.verify} 次`, kb: `经验 ${S.sim.knowledge.length} 条` }[z.id];
         el.innerHTML = `<div class="zl"><i class="fas ${z.icon}" style="color:${z.color}"></i>${z.name}</div><div class="zs">${sub}</div>`; return;
       }
       const open = T.filter((t) => t.deptId === z.id && !['done', 'rejected'].includes(t.status));
@@ -518,7 +587,8 @@
       const done = mine.filter((t) => t.status === 'done').length;
       const warn = open.some((t) => t.esc >= 2 || t.paused);
       const cols = [...new Set(open.map((t) => Flow.cmd(t.cmdId)?.no).filter(Boolean))];
-      el.innerHTML = `<div class="zl ${open.length ? '' : 'idle'}">${warn ? '<i class="fas fa-triangle-exclamation" style="color:var(--warn)"></i>' : `<i class="fas ${z.icon}" style="color:${z.color}"></i>`}${esc(z.name)}</div><div class="zs">${open.length ? `在办 ${open.length} · 指令 ${cols.map((n) => '#' + n).join(' ')}` : '待命'}</div>${mine.length ? `<div class="zp"><i style="width:${done / mine.length * 100}%"></i></div>` : ''}`;
+      const MP = window.Masters?.get(z.id);
+      el.innerHTML = `<div class="zl ${open.length ? '' : 'idle'}">${warn ? '<i class="fas fa-triangle-exclamation" style="color:var(--warn)"></i>' : `<i class="fas ${z.icon}" style="color:${z.color}"></i>`}${esc(z.name)}</div><div class="zs">${MP ? `<i class="fas fa-user-tie"></i> ${esc(MP.title)} · ` : ''}${open.length ? `在办 ${open.length} · 指令 ${cols.map((n) => '#' + n).join(' ')}` : '待命'}</div>${mine.length ? `<div class="zp"><i style="width:${done / mine.length * 100}%"></i></div>` : ''}`;
       const lk = $('#lk-' + z.id); if (lk) { lk.setAttribute('stroke-opacity', open.length ? '.7' : '.12'); lk.classList.toggle('flow', !!open.length); }
     });
     S.agents.forEach((a) => {
@@ -529,11 +599,33 @@
       else if (!working && (act.gx !== act.home[0] || act.gy !== act.home[1])) moveActor(a.id, act.home[0], act.home[1]);
     });
     const qa = isoCtx.actors['qa-bot']; if (qa) qa.el.classList.toggle('busy', T.some((t) => t.status === 'verify'));
+    const c = Flow.cmd(Flow.focus) || Flow.active()[0] || S.sim.commands[0];
+    // 部门成果卡
+    const STEPN = { plan: '规划', tool: '调用工具', write: '撰写', accept: '验收', package: '编排汇报' };
+    isoCtx.zones.filter((z) => !z.special).forEach((z) => {
+      const el = $('#zc-' + z.id); if (!el) return;
+      const t = c ? c.taskIds.map(Flow.task).filter((x) => x && x.deptId === z.id && x.status !== 'rejected').slice(-1)[0] : null;
+      if (!t) { el.classList.remove('on'); el.dataset.t = ''; el.innerHTML = ''; return; }
+      const sc = t.accept?.total ?? t.evals?.total, sl = (t.pack?.slides || []).find((x) => x.url);
+      const sig = [t.id, t.status, t.step, sc, sl?.url, t.progress].join('|'); if (el.dataset.sig === sig) return; el.dataset.sig = sig; el.dataset.t = t.id;
+      el.className = `zone-card on st-${t.status}`;
+      el.innerHTML = sl ? `<img src="${esc(sl.url)}" alt=""><div class="zc-ft"><b>${sc ?? ''}</b><span>${esc((t.pack?.doc?.title || t.title).slice(0, 12))}</span></div>`
+        : `<div class="zc-st">${t.status === 'done' || t.status === 'approval' ? `<i class="fas fa-circle-check" style="color:var(--ok)"></i>` : t.status === 'pack' ? '<i class="fas fa-file-powerpoint fa-beat" style="color:#ea580c"></i>' : ['exec', 'rework', 'verify'].includes(t.status) ? '<i class="fas fa-spinner fa-spin"></i>' : '<i class="fas fa-hourglass-half"></i>'}<b>${esc(t.status === 'pack' ? '出汇报材料' : t.status === 'verify' ? '独立验收' : STEPN[t.step] || TASK_ST[t.status]?.[0] || '')}</b>${sc != null ? `<em>${sc}</em>` : ''}</div><div class="zc-t">${esc(t.title.slice(0, 14))}</div>${['exec', 'rework'].includes(t.status) ? `<i class="zc-pg"><em style="width:${t.progress}%"></em></i>` : ''}`;
+    });
+    // 流程带：当前指令在 9 段流程中的位置
+    const lane = $('#iso-lane');
+    if (lane) {
+      if (!c) lane.innerHTML = '<span class="dim">下达指令后，这里显示：深度研究 → 发展规划 → 可行性校验 → 老板决策 → 部门执行 → 验收 → 审批 → 交付汇报 → 复盘归档</span>';
+      else { const st = Flow.cmdSteps(c); lane.innerHTML = `<b style="color:${c.color}">#${c.no}</b>` + FLOW_STAGES.map((s2, i) => `<span class="ln ${st[i]} ${s2.gate ? 'gate' : ''}"><i class="fas ${s2.i}"></i>${s2.n}</span>`).join('<i class="fas fa-chevron-right ln-ar"></i>'); }
+    }
     const brief = $('#brief'); if (!brief) return;
-    const c = Flow.cmd(Flow.focus) || Flow.active()[0];
     const pend = S.sim.approvals.filter((x) => x.status === 'pending');
     brief.innerHTML = `<div class="flex between"><span class="h3"><i class="fas fa-crown" style="color:#d97706"></i> 老板视角</span><span class="dim" style="font-size:11px">D${S.sim.day} ${simTime()}</span></div>
-      ${c ? `<div class="mt" style="font-size:12px"><b style="color:${c.color}">#${c.no}</b> ${esc(c.text)}</div>${stepDots(c, true)}<div class="hint">${cmdStageLabel(c)}</div>` : '<div class="hint mt">暂无指令，全体待命。在右侧下达指令后，可在这里看到它沿指挥链流转。</div>'}
+      ${c ? `<div class="mt" style="font-size:12px"><b style="color:${c.color}">#${c.no}</b> ${esc(c.text)}</div>${stepDots(c, true)}<div class="hint">${cmdStageLabel(c)}</div>
+        ${c.strategy ? `<div class="bb-dec"><span>方案</span><b>${c.decision ? `${c.decision.key}「${esc(c.decision.name)}」` : `待决策 · 推荐 ${c.strategy.recommend}`}</b>${c.feas ? `<em>可行性 ${c.feas.total}</em>` : ''}</div>` : ''}
+        ${c.stage === 'confirm' && c.strategy ? `<button class="btn btn-pri btn-sm mt" style="width:100%;justify-content:center" onclick="gotoView('flow')"><i class="fas fa-crown"></i>去决策室选定方案</button>` : ''}
+        ${c.taskIds.length ? `<div class="bb-res">${c.taskIds.map(Flow.task).filter(Boolean).map((t) => { const d = deptOf(t.deptId), sc = t.accept?.total ?? t.evals?.total; return `<div onclick="${t.pack ? `openReport('${t.id}','ppt')` : `openTaskModal('${t.id}')`}"><i class="fas ${d?.icon}" style="color:${d?.color}"></i><span>${esc(d?.name || '')}</span><small>${TASK_ST[t.status]?.[0] || ''}</small><b class="${sc >= (t.accept?.threshold || 80) ? 'ok' : ''}">${sc ?? '—'}</b>${t.pack ? '<i class="fas fa-file-powerpoint" style="color:#ea580c"></i>' : ''}</div>`; }).join('')}</div>` : ''}
+        ${c.acceptance ? `<div class="bb-acc">指令验收 <b>${c.acceptance.score}</b>${c.decisionEval ? ` · 决策见效 <b>${c.decisionEval.score}</b>` : ''}</div>` : ''}` : '<div class="hint mt">暂无指令，全体待命。在右侧下达指令后，可在这里看到它沿指挥链流转。</div>'}
       ${pend.length ? `<button class="btn btn-sm mt" style="width:100%;justify-content:center;background:rgba(255,181,71,.15);border:1px solid var(--warn);color:var(--warn)" onclick="gotoView('approve')"><i class="fas fa-shield-halved"></i>${pend.length} 项待您审批</button>` : ''}`;
   }
   function bubble(id, text, cls = '') {

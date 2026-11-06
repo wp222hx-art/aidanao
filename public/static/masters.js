@@ -45,7 +45,7 @@
     if (gen) return gen;
     M.busy = true; window.onMastersChange && onMastersChange();
     const chunks = []; for (let i = 0; i < todo.length; i += 6) chunks.push(todo.slice(i, i + 6));
-    gen = Promise.all(chunks.map((ch) => AI.call('/persona/batch', { company: S.company.name, industry: `${S.industry?.name || ''} › ${S.industry?.div?.name || ''}`, business: S.company.profile?.business || S.company.profile?.positioning || '', engine: officeCfg().engine, depts: ch.map((d) => { const L = deptLib(d.lib); return { id: d.id, name: d.name, kpi: L?.kpi || [], tasks: L?.tasks || [] }; }) })
+    gen = Promise.all(chunks.map((ch) => AI.call('/persona/batch', { company: S.company.name, industry: `${S.industry?.name || ''} › ${S.industry?.div?.name || ''}`, business: S.company.profile?.business || S.company.profile?.positioning || '', engine: roleModel('persona'), depts: ch.map((d) => { const L = deptLib(d.lib); return { id: d.id, name: d.name, kpi: L?.kpi || [], tasks: L?.tasks || [] }; }) })
       .then((r) => (r.personas || []).forEach((p) => { if (!M.get(p.deptId)?.edited) M.all()[p.deptId] = { ...p, ai: true, edited: false }; }))
       .catch((e) => toast('大师身份生成失败：' + e.message, 'fa-triangle-exclamation'))))
       .then(() => { saveState(); return true; })
@@ -64,9 +64,8 @@
     p.innerHTML = `<div class="page-hd"><div class="ic"><i class="fas fa-user-tie"></i></div><div><div class="h2">大师智库</div><div class="hint">每个部门由一位「${esc(indShort())} × 部门」大师担任首席智能体：自动生成身份、履历与思维方式；您可以随时调整他们的思维、方法论和边界</div></div>
       <div style="margin-left:auto" class="flex"><button class="btn btn-ghost btn-sm" id="ms-regen"${M.busy ? ' disabled' : ''}><i class="fas ${M.busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}"></i>${M.busy ? '大师生成中…' : 'AI 重新生成大师（保留已编辑）'}</button></div></div>
       <div class="grid3">
-        <div class="card"><div class="h4"><i class="fas fa-brain" style="color:var(--c2)"></i> 推理引擎（全部 Ultra · high 深度推理）</div><select id="ms-engine" class="mt" style="width:100%">${ENGINE_LIST.map(([k, n]) => `<option value="${k}" ${cfg.engine === k ? 'selected' : ''}>${n}</option>`).join('')}</select><div class="hint mt">指令拆解、执行规划、成果撰写、独立验收、汇报材料、复盘全部使用该引擎。</div></div>
-        <div class="card"><div class="h4"><i class="fas fa-file-powerpoint" style="color:#ea580c"></i> 创意 PPT 生成模型</div><div class="col mt" style="gap:6px">${SLIDE_MODELS.map(([k, n, d]) => `<label class="chan ${cfg.slideModel === k ? 'on' : ''}" style="padding:8px"><input type="radio" name="ms-slm" value="${k}" ${cfg.slideModel === k ? 'checked' : ''} hidden><span class="pb"><b>${n}</b><div class="dim" style="font-size:11px">${d}</div></span></label>`).join('')}</div>
-          <div class="flex mt"><span class="hint">每个部门汇报页数</span><select id="ms-slides">${[3, 4, 5, 6].map((n) => `<option ${cfg.slides === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div></div>
+        <div class="card"><div class="h4"><i class="fas fa-sliders" style="color:var(--c2)"></i> 模型配置</div><div class="hint mt">执行：<b>${esc(modelName(roleModel('exec')))}</b> · 验收：<b>${esc(modelName(roleModel('accept')))}</b><br>幻灯片设计：<b>${esc(modelName(roleModel('slideDesign')))}</b> · 出图：<b>${esc(modelName(roleModel('slideImage')))}</b></div><button class="btn btn-ghost btn-sm mt" onclick="gotoView('models')"><i class="fas fa-gear"></i>打开模型配置中心</button></div>
+        <div class="card"><div class="h4"><i class="fas fa-file-powerpoint" style="color:#ea580c"></i> 部门汇报 PPT 页数</div><div class="flex mt"><span class="hint">每个部门</span><select id="ms-slides">${[3, 4, 5, 6].map((n) => `<option ${cfg.slides === n ? 'selected' : ''}>${n}</option>`).join('')}</select><span class="hint">页</span></div><div class="hint mt">页数越多，出图积分越高（GPT Image 2 约 30 积分/页）。</div></div>
         <div class="card"><div class="h4"><i class="fas fa-shield-halved" style="color:var(--warn)"></i> 全员边界（所有大师共同遵守）</div><textarea id="ms-rules" rows="5" class="mt" style="width:100%;font-size:12px" placeholder="每行一条，例如：&#10;所有价格建议不得低于成本价 15%&#10;不得承诺交期短于 30 天">${esc((mc.rules || []).join('\n'))}</textarea><button class="btn btn-pri btn-sm mt" id="ms-rules-save"><i class="fas fa-check"></i>保存全员边界</button></div>
       </div>
       <div class="ms-grid mt">${S.depts.map((d) => { const P = M.get(d.id) || {}; return `<article class="ms-card" style="--dc:${d.color}">
@@ -78,8 +77,6 @@
         <div class="ms-sec"><h5>边界</h5><ul class="bd">${ul(P.boundaries)}</ul></div>
         ${(P.kpis || []).length ? `<div class="ms-sec"><h5>结果指标</h5><div class="flex wrap" style="gap:4px">${P.kpis.map((x) => `<span class="tag ok">${esc(x)}</span>`).join('')}</div></div>` : ''}
       </article>`; }).join('')}</div>`;
-    $('#ms-engine').onchange = (e) => { cfg.engine = e.target.value; saveState(); toast(`推理引擎：${ENGINE_LIST.find((x) => x[0] === cfg.engine)[1]}`, 'fa-brain'); };
-    $$('[name=ms-slm]', p).forEach((r) => r.onchange = () => { cfg.slideModel = r.value; saveState(); MOD_PAGES.masters(p); });
     $('#ms-slides').onchange = (e) => { cfg.slides = +e.target.value; saveState(); };
     $('#ms-rules-save').onclick = () => { mc.rules = $('#ms-rules').value.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 20); saveState(); toast(`已保存 ${mc.rules.length} 条全员边界，后续任务立即生效`, 'fa-shield-halved'); };
     $('#ms-regen').onclick = () => { M.generate(true).then((ok) => { if (!ok) toast('需要连接 Genspark 才能 AI 生成大师身份'); if ($('#page')) MOD_PAGES.masters($('#page')); }); MOD_PAGES.masters(p); };

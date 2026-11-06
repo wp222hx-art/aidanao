@@ -14,14 +14,15 @@
   window.CHECKPOINTS = CHECKPOINTS;
   // 流水线阶段（「下达」为每条指令的行首）
   const STAGES = [
-    { k: 'plan', n: '拆解', who: '智脑中枢', i: 'fa-brain' },
-    { k: 'confirm', n: '方案确认', who: '老板', i: 'fa-stamp', gate: true },
-    { k: 'dispatch', n: '分发', who: '部门集群', i: 'fa-share-nodes' },
-    { k: 'exec', n: '执行', who: 'Agent', i: 'fa-robot' },
-    { k: 'verify', n: '校验', who: 'AI 质检官', i: 'fa-clipboard-check' },
+    { k: 'research', n: '深度研究', who: '研究员', i: 'fa-magnifying-glass-chart' },
+    { k: 'strategy', n: '发展规划', who: '战略官', i: 'fa-chess-queen' },
+    { k: 'feasibility', n: '可行性校验', who: '评审', i: 'fa-scale-balanced' },
+    { k: 'confirm', n: '老板决策', who: '老板', i: 'fa-crown', gate: true },
+    { k: 'exec', n: '部门执行', who: '大师 Agent', i: 'fa-robot' },
+    { k: 'verify', n: '独立验收', who: '验收官', i: 'fa-clipboard-check' },
     { k: 'approve', n: '审批', who: '老板', i: 'fa-shield-halved', gate: true },
-    { k: 'deliver', n: '交付', who: '部门', i: 'fa-box-open' },
-    { k: 'improve', n: '复盘提升', who: '知识库', i: 'fa-arrow-trend-up' }
+    { k: 'deliver', n: '交付汇报', who: '部门', i: 'fa-file-powerpoint' },
+    { k: 'improve', n: '复盘归档', who: 'COO', i: 'fa-box-archive' }
   ];
   window.FLOW_STAGES = STAGES;
   const CMD_COLORS = ['#2563eb', '#d97706', '#db2777', '#059669', '#7c3aed', '#ea580c', '#0891b2', '#be185d'];
@@ -89,7 +90,8 @@
     const c = {
       id: uid('c'), no, text, goal: '', source: opt.source || 'boss', parentId: opt.parentId || null, iteration: opt.iteration || 1,
       color: CMD_COLORS[(no - 1) % CMD_COLORS.length], stage: 'plan', plan: [], taskIds: [], day: S.sim.day, t: simTime(),
-      log: [], review: null, acceptance: null, real: isReal(), feedback: opt.feedback || '', presetPlan: opt.plan || null, confirm: null, replans: 0, ref: opt.ref || null
+      log: [], review: null, acceptance: null, real: isReal(), feedback: opt.feedback || '', presetPlan: opt.plan || null, confirm: null, replans: 0, ref: opt.ref || null,
+      skipPrep: !!opt.plan, trace: [], research: null, strategy: null, feas: null, feasHist: [], decision: null, decisionEval: null
     };
     S.sim.commands.unshift(c);
     if (S.sim.commands.length > 40) { const drop = S.sim.commands.slice(40).filter((x) => ['done', 'cancelled'].includes(x.stage)).map((x) => x.id); S.sim.commands = S.sim.commands.filter((x) => !drop.includes(x.id)); S.sim.tasks = S.sim.tasks.filter((t) => !drop.includes(t.cmdId)); }
@@ -123,28 +125,161 @@
     c.plan = plan.slice(0, 6); c.goal = c.goal || c.text;
   }
   async function plan(c) {
-    c.stage = 'plan';
-    if (c.presetPlan) { c.plan = c.presetPlan; c.goal = c.goal || c.text; return afterPlan(c, true); }
-    if (c.real && isReal()) {
-      try {
-        const r = await AI.call('/command', { ...ctxBase(), engine: officeCfg().engine, text: c.text, feedback: c.feedback, knowledge: knowledgeFor(null), depts: S.depts.map((d) => ({ id: d.id, name: d.name })) });
-        if (!r.tasks?.length) throw new Error('未拆解出任务');
-        c.goal = r.goal || c.text;
-        c.plan = r.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null }));
-      } catch (e) { log(c.id, 'plan', `⚠️ AI 拆解失败（${esc(e.message)}），改用本地规则`, '#dc2626'); localPlan(c); }
-      if (c.stage !== 'plan') return; // 期间被取消
-      afterPlan(c);
-    } else { localPlan(c); c.planDue = S.sim.min + rand(15, 25); }
+    if (c.presetPlan) { c.stage = 'plan'; c.plan = c.presetPlan; c.goal = c.goal || c.text; return afterPlan(c, true); }
+    if (c.real && isReal()) return deepPlan(c);
+    // 仿真：结构与真实一致，按节拍推进 研究 → 规划 → 校验
+    c.stage = c.research ? 'strategy' : 'research'; c.planDue = S.sim.min + rand(8, 14);
   }
+
+  // ====================== ①½ 深度研究 → 发展规划 → 可行性校验 ======================
+  const mName = (k) => modelName(roleModel(k));
+  function ctrace(c, step, o = {}) { c.trace = c.trace || []; const e = { id: uid('y'), step, at: stamp(), ts: Date.now(), status: 'run', ...o }; c.trace.push(e); if (c.trace.length > 40) c.trace.shift(); refresh(); return e; }
+  function cok(c, e, o = {}) { Object.assign(e, { status: 'ok', ms: Date.now() - e.ts }, o); refresh(); }
+  function cfail(c, e, msg) { e.status = 'fail'; e.detail = msg; e.ms = Date.now() - e.ts; refresh(); }
+  const cmdBody = (c) => ({ ...ctxBase(), text: c.text, profile: S.company.profile ? [S.company.profile.positioning, (S.company.profile.opportunities || []).join('；'), (S.company.profile.risks || []).join('；')].filter(Boolean).join('\n') : '', knowledge: knowledgeFor(null) });
+  const alive = (c, st) => c.stage === st;
+  async function deepPlan(c) {
+    const body = cmdBody(c), depts = S.depts.map((d) => ({ id: d.id, name: d.name }));
+    let e = null;
+    try {
+      // ① 深度研究（重新拆解时复用已有研究）
+      if (!c.research) {
+        c.stage = 'research'; fx('boss', 'brain', '深度研究', '#2563eb'); refresh();
+        e = ctrace(c, 'research', { label: '研究设计', detail: `${mName('research')} 拆解指令本质与关键问题` });
+        const rp = await AI.call('/cmd/research/plan', { ...body, engine: roleModel('research') });
+        if (!alive(c, 'research')) return;
+        cok(c, e, { detail: `本质：${rp.essence} · ${rp.questions.length} 个关键问题 · ${rp.queries.length} 个检索词`, model: mName('research'), extra: { questions: rp.questions, dataNeeds: rp.dataNeeds } });
+        log(c.id, 'research', `🔬 #${c.no} 研究设计：${esc(rp.essence)}`, '#2563eb');
+        const ev = [], seen = new Set(); const add = (x) => { if (x?.url && !seen.has(x.url)) { seen.add(x.url); ev.push(x); } };
+        const qs = rp.queries.length ? rp.queries : [c.text];
+        await Promise.all([qs.slice(0, 4), qs.slice(4, 8)].filter((g) => g.length).map(async (g) => {
+          const t = ctrace(c, 'search', { label: '全网检索', tool: 'batch', detail: g.join(' / ') });
+          try { const r = await AI.call('/task/tool', { tier: 'leader', tools: ['batch', 'crawl'], tool: 'batch', queries: g }); r.sources.forEach(add); cok(c, t, { detail: `${r.summary}`, sources: r.sources.slice(0, 6) }); fx('brain', 'kb', '检索', '#0284c7'); }
+          catch (er) { cfail(c, t, er.message); }
+        }));
+        if (!alive(c, 'research')) return;
+        const reads = ev.filter((x) => !/\.pdf($|\?)/i.test(x.url)).slice(0, 3);
+        await Promise.all(reads.map(async (x) => {
+          const t = ctrace(c, 'search', { label: '深读网页', tool: 'crawl', detail: x.title });
+          try { const r = await AI.call('/task/tool', { tier: 'leader', tools: ['batch', 'crawl'], tool: 'crawl', url: x.url, title: x.title }); x.text = String(r.text || '').slice(0, 2400); cok(c, t, { detail: `${r.summary}：${x.title}` }); }
+          catch (er) { cfail(c, t, er.message); }
+        }));
+        if (!alive(c, 'research')) return;
+        const evidence = [...ev.filter((x) => x.text), ...ev.filter((x) => !x.text)].slice(0, 16);
+        e = ctrace(c, 'research', { label: '研究综合', detail: `${mName('research')} 综合 ${evidence.length} 条证据，划定真实数据边界` });
+        const rs = await AI.call('/cmd/research/synth', { ...body, engine: roleModel('research'), essence: rp.essence, questions: rp.questions, evidence });
+        if (!alive(c, 'research')) return;
+        c.research = { ...rs, essence: rp.essence, questions: rp.questions, dataNeeds: rp.dataNeeds, at: stamp() };
+        cok(c, e, { detail: `${rs.findings.length} 条发现 · ${rs.data.length} 项关键数据 · ${rs.boundaries.length} 条数据边界`, model: mName('research') });
+        log(c.id, 'research', `📚 #${c.no} 深度研究完成：${esc(rs.summary.slice(0, 60))}… · ${evidence.length} 条证据`, '#2563eb');
+      }
+      // ② 发展规划 + ③ 可行性校验（未通过自动修订一次）
+      await strategize(c, { feedback: c.feedback });
+      if (!c.strategy) return;
+      if (modelCfg().autoRevise && c.feas && c.feas.verdict !== 'go' && (c.revisions || 0) < 1) {
+        c.revisions = (c.revisions || 0) + 1;
+        const fb = [`可行性校验 ${c.feas.total} 分（${c.feas.verdict === 'nogo' ? '不可行' : '需修订'}）：${c.feas.summary}`, ...c.feas.issues.map((x) => `[${x.level}] ${x.text} → ${x.fix}`)].join('\n');
+        log(c.id, 'feas', `🔁 #${c.no} 可行性 ${c.feas.total} 分未达 80，战略官按评审意见自动修订方案`, '#d97706');
+        await strategize(c, { feedback: fb });
+        if (!c.strategy) return;
+      }
+      if (!['strategy', 'feasibility'].includes(c.stage)) return;
+      c.goal = c.strategy.goal || c.text;
+      c.plan = c.strategy.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null }));
+      if (!c.plan.length) throw new Error('规划未产出部门任务');
+      afterPlan(c);
+    } catch (er) {
+      if (e && e.status === 'run') cfail(c, e, er.message);
+      if (['cancelled', 'done'].includes(c.stage)) return;
+      log(c.id, 'plan', `⚠️ 深度规划中断（${esc(er.message)}），改用快速拆解`, '#dc2626');
+      c.stage = 'plan';
+      try {
+        const r = await AI.call('/command', { ...ctxBase(), engine: roleModel('strategy'), text: c.text, feedback: c.feedback, knowledge: knowledgeFor(null), depts });
+        if (!r.tasks?.length) throw new Error('未拆解出任务');
+        c.goal = r.goal || c.text; c.plan = r.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null }));
+      } catch (e2) { localPlan(c); }
+      if (c.stage !== 'plan') return;
+      afterPlan(c);
+    }
+  }
+  async function strategize(c, o = {}) {
+    const body = cmdBody(c), depts = S.depts.map((d) => ({ id: d.id, name: d.name }));
+    c.stage = 'strategy'; fx('brain', 'boss', '规划', '#7c3aed');
+    let e = ctrace(c, 'strategy', { label: o.chosen ? '按老板选择重排' : (o.feedback ? '修订规划' : '发展规划'), detail: `${mName('strategy')} ${o.chosen ? '以方案「' + o.chosen + '」为主线' : '制定 3 套差异化创意方案'}` });
+    const st = await AI.call('/cmd/strategy', { ...body, engine: roleModel('strategy'), research: c.research, depts, feedback: o.feedback || '', chosen: o.chosen || '' });
+    if (c.stage !== 'strategy') return;
+    c.strategy = { ...st, v: (c.strategy?.v || 0) + 1, at: stamp() };
+    const rec = st.options.find((x) => x.key === st.recommend);
+    cok(c, e, { detail: `核心判断：${st.thesis} · 推荐 ${st.recommend}「${rec?.name || ''}」· ${st.tasks.length} 项部门任务`, model: mName('strategy') });
+    log(c.id, 'strategy', `♟️ #${c.no} 发展规划 v${c.strategy.v}：${st.options.map((x) => `${x.key}「${esc(x.name)}」`).join(' / ')} → 推荐 <b>${st.recommend}</b>`, '#7c3aed');
+    c.stage = 'feasibility'; fx('brain', 'qa', '可行性校验', '#d97706');
+    e = ctrace(c, 'feasibility', { label: '可行性校验', detail: `${mName('feasibility')} 七维挑毛病：数据/资源/财务/时间/风险/合规/落地` });
+    const fs = await AI.call('/cmd/feasibility', { ...body, engine: roleModel('feasibility'), research: c.research, strategy: c.strategy });
+    if (c.stage !== 'feasibility') return;
+    c.feas = { ...fs, v: c.strategy.v, at: stamp() }; c.feasHist = [...(c.feasHist || []), { v: c.strategy.v, total: fs.total, verdict: fs.verdict }];
+    cok(c, e, { detail: `${fs.total} 分 · ${{ go: '可落地', revise: '需修订', nogo: '不可行' }[fs.verdict]} · ${fs.issues.length} 个问题`, model: mName('feasibility') });
+    log(c.id, 'feas', `⚖️ #${c.no} 可行性校验 <b>${fs.total}</b> 分（${{ go: '可落地', revise: '需修订', nogo: '不可行' }[fs.verdict]}）：${esc(fs.summary.slice(0, 50))}`, fs.verdict === 'go' ? '#059669' : '#d97706');
+  }
+  // 公司级规划摘要：注入到每个部门任务，保证部门成果与老板选定的方案一致
+  F.stratText = function (c, t) {
+    const st = c?.strategy; if (!st) return '';
+    const k = c.decision?.key || st.recommend, o = st.options.find((x) => x.key === k);
+    return [`核心判断：${st.thesis}`, o ? `老板选定方案 ${o.key}「${o.name}」：${o.idea}（投入 ${o.invest}；回报 ${o.return}；周期 ${o.period}）` : '', st.targets?.length ? `量化目标：${st.targets.map((x) => `${x.kpi} ${x.base}→${x.target}`).join('；')}` : '', st.milestones?.length ? `里程碑：${st.milestones.map((m) => `${m.when} ${m.what}`).join('；')}` : '', st.notdo?.length ? `不做：${st.notdo.join('；')}` : '', c.research?.boundaries?.length ? `真实数据边界：${c.research.boundaries.join('；')}` : '', t?.link ? `本任务承接：${t.link}` : ''].filter(Boolean).join('\n');
+  };
+  // 仿真版研究 / 规划 / 校验（明确标注仿真）
+  function simPrep(c) {
+    if (c.stage === 'research') {
+      c.research = { sim: true, essence: c.text.slice(0, 30), summary: '仿真模式：未连接 Genspark，未进行真实检索。连接后将基于全网证据输出研究结论与真实数据边界。', findings: [{ text: '（仿真）行业公开数据待检索', src: [], kind: 'inference' }], data: [{ metric: '市场规模', value: '待真实检索', source: '仿真', confidence: 'low' }, { metric: '行业增速', value: '待真实检索', source: '仿真', confidence: 'low' }], boundaries: ['（仿真）连接 Genspark 后按真实数据划定目标上限'], opportunities: ['（仿真）机会待研究'], risks: ['（仿真）风险待研究'], gaps: ['企业内部经营数据'], answers: [], sources: [], at: stamp() };
+      ctrace(c, 'research', { label: '深度研究', detail: '（仿真）研究设计 + 检索 + 综合', status: 'ok', sim: true });
+      log(c.id, 'research', `🔬 #${c.no} 深度研究（仿真）`, '#2563eb');
+      c.stage = 'strategy'; c.planDue = S.sim.min + rand(8, 14); return;
+    }
+    if (c.stage === 'strategy') {
+      localPlan(c);
+      c.strategy = { sim: true, v: (c.strategy?.v || 0) + 1, goal: c.goal, thesis: `（仿真）围绕「${c.text.slice(0, 16)}」集中资源打透一个突破口`, options: [{ key: 'A', name: '稳健推进', idea: '在现有渠道和团队基础上分阶段推进', invest: '低', return: '中', risk: '见效慢', period: '90 天', fit: '高' }, { key: 'B', name: '生态借力', idea: '联合上下游伙伴与平台资源共同打开市场', invest: '中', return: '中高', risk: '依赖合作方', period: '60 天', fit: '中' }, { key: 'C', name: 'AI 重构', idea: '用 AI 智能体重构获客与交付流程，人效翻倍', invest: '中', return: '高', risk: '组织适应', period: '45 天', fit: '中' }], recommend: 'A', why: '（仿真）资源匹配度最高', targets: [{ kpi: '核心指标', base: '待确认', target: '待真实数据测算', basis: '仿真' }], milestones: [{ when: '第 2 周', what: '方案落地启动', owner: '各部门' }, { when: '30 天', what: '首轮复盘', owner: '战略' }], notdo: ['（仿真）不做超出预算的投入'], tasks: c.plan, at: stamp() };
+      ctrace(c, 'strategy', { label: '发展规划', detail: '（仿真）3 套方案 + 部门任务', status: 'ok', sim: true });
+      log(c.id, 'strategy', `♟️ #${c.no} 发展规划（仿真）：A 稳健推进 / B 生态借力 / C AI 重构 → 推荐 A`, '#7c3aed');
+      c.stage = 'feasibility'; c.planDue = S.sim.min + rand(6, 10); return;
+    }
+    if (c.stage === 'feasibility') {
+      const dims = [['data', '数据支撑', 20], ['resource', '资源匹配', 15], ['finance', '财务可行', 15], ['timeline', '时间可行', 10], ['risk', '风险可控', 15], ['compliance', '合规安全', 10], ['landing', '落地路径', 15]].map(([k, name, w]) => ({ k, name, w, score: rand(72, 92), note: '（仿真）' }));
+      const total = Math.round(dims.reduce((a, d) => a + d.score * d.w, 0) / 100);
+      c.feas = { sim: true, v: c.strategy.v, dims, total, verdict: total >= 80 ? 'go' : 'revise', issues: [{ level: 'mid', text: '（仿真）关键目标缺少真实数据支撑', fix: '连接 Genspark 后基于检索数据校准' }], assumptions: ['（仿真）关键假设待验证'], optionsView: [], summary: `（仿真）可行性 ${total} 分`, at: stamp() };
+      c.feasHist = [...(c.feasHist || []), { v: c.feas.v, total, verdict: c.feas.verdict }];
+      ctrace(c, 'feasibility', { label: '可行性校验', detail: `（仿真）${total} 分`, status: 'ok', sim: true });
+      log(c.id, 'feas', `⚖️ #${c.no} 可行性校验 <b>${total}</b> 分（仿真）`, '#059669');
+      afterPlan(c);
+    }
+  }
+  // 老板决策：选定方案（与 AI 推荐不同则按所选方案重排任务）→ 分发
+  F.decide = async function (id, key, note) {
+    const c = cmdOf(id); if (!c || c.stage !== 'confirm') return;
+    const st = c.strategy, rec = st?.recommend;
+    key = key || rec;
+    S.sim.approvals.filter((a) => a.cmdId === c.id && a.kind === 'plan' && a.status === 'pending').forEach((a) => { a.status = 'approved'; a.reason = key ? `选定方案 ${key}` : ''; S.sim.metrics.approvals++; });
+    const o = st?.options?.find((x) => x.key === key);
+    c.decision = { key, name: o?.name || '', recommended: rec, follow: !rec || key === rec, feas: c.feas?.total ?? null, note: note || '', at: stamp() };
+    c.confirm = 'approved';
+    log(c.id, 'confirm', `👑 老板决策 #${c.no}：${o ? `选定方案 <b>${key}「${esc(o.name)}」</b>${c.decision.follow ? '（采纳 AI 推荐）' : `（AI 推荐 ${rec}）`}` : '确认方案'}${note ? ' · ' + esc(note) : ''}`, '#d97706');
+    fx('boss', 'brain', '决策', '#d97706');
+    if (o && !c.decision.follow && c.real && isReal() && st && !st.sim) {
+      try { await strategize(c, { chosen: `${o.key} ${o.name}` }); } catch (er) { log(c.id, 'plan', `⚠️ 按所选方案重排失败（${esc(er.message)}），沿用原任务`, '#dc2626'); }
+      if (c.strategy?.tasks?.length) { c.goal = c.strategy.goal || c.goal; c.plan = c.strategy.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null })); }
+      if (['cancelled', 'done'].includes(c.stage)) return;
+    }
+    dispatch(c); saveState(); refresh(); window.updateBadges && updateBadges();
+  };
+  F.pick = function (id, key) { const c = cmdOf(id); if (c) { c.pick = key; saveState(); refresh(); } };
   function afterPlan(c, direct) {
     c.planDue = null;
     const names = [...new Set(c.plan.map((p) => deptOf(p.deptId)?.name).filter(Boolean))];
     log(c.id, 'plan', `🧠 智脑拆解 #${c.no}：目标「${esc(c.goal)}」→ ${c.plan.length} 项任务（${esc(names.join('、'))}）${c.plan.some((p) => p.needApproval) ? '，含高风险动作' : ''}`, '#2563eb');
     if (!direct && S.sim.settings.planConfirm && c.source !== 'routine') {
       c.stage = 'confirm';
-      addApproval({ kind: 'plan', cmdId: c.id, action: '方案确认', desc: `#${c.no}「${c.text.slice(0, 30)}」拆解为 ${c.plan.length} 项：${c.plan.map((p) => `${deptOf(p.deptId)?.name}·${p.title}${p.needApproval ? '(高风险)' : ''}`).join('；')}` });
-      fx('brain', 'boss', '方案待确认', '#d97706');
-    } else { c.confirm = direct ? 'direct' : 'skip'; dispatch(c); }
+      const st = c.strategy, rec = st?.options?.find((x) => x.key === st.recommend);
+      addApproval({ kind: 'plan', cmdId: c.id, action: st ? '老板决策' : '方案确认', desc: `#${c.no}「${c.text.slice(0, 30)}」${st ? `AI 推荐方案 ${st.recommend}「${rec?.name || ''}」· 可行性 ${c.feas?.total ?? '-'} 分 · ` : ''}${c.plan.length} 项部门任务：${c.plan.map((p) => `${deptOf(p.deptId)?.name}·${p.title}${p.needApproval ? '(高风险)' : ''}`).join('；')}` });
+      fx('brain', 'boss', '待老板决策', '#d97706');
+    } else { c.confirm = direct ? 'direct' : 'skip'; if (c.strategy) c.decision = { key: c.strategy.recommend, name: (c.strategy.options.find((x) => x.key === c.strategy.recommend) || {}).name || '', recommended: c.strategy.recommend, follow: true, feas: c.feas?.total ?? null, auto: true, at: stamp() }; dispatch(c); }
     saveState(); refresh();
   }
 
@@ -152,7 +287,7 @@
   function dispatch(c) {
     c.stage = 'run';
     c.plan.forEach((p, i) => {
-      const t = createTask(p.deptId, p.title, { cmdId: c.id, deliverable: p.deliverable, sla: p.sla, needApproval: p.needApproval, kind: p.kind, ref: p.ref, kws: p.kws, level: p.level });
+      const t = createTask(p.deptId, p.title, { cmdId: c.id, deliverable: p.deliverable, sla: p.sla, needApproval: p.needApproval, kind: p.kind, ref: p.ref, kws: p.kws, level: p.level, link: p.link });
       if (t) { c.taskIds.push(t.id); setTimeout(() => fx('brain', p.deptId, '分发', c.color), i * 220); }
     });
     log(c.id, 'dispatch', `📤 #${c.no} 分发至 ${new Set(c.plan.map((p) => p.deptId)).size} 个部门 Agent 集群，共 ${c.taskIds.length} 项任务`, c.color);
@@ -173,7 +308,7 @@
     const t = {
       id: uid('t'), cmdId: opt.cmdId || null, deptId, title, agentId: ag?.id, ownerId: owner?.id || null,
       status: 'queued', progress: 0, sla: opt.sla || 240, age: 0, day: S.sim.day, esc: 0, stuck: false, evals: null, rework: 0,
-      real: !!(c ? c.real && isReal() : isReal()), deliverable: opt.deliverable || '', needApproval: !!opt.needApproval, kind: opt.kind || null, ref: opt.ref || null, kws: opt.kws || null,
+      real: !!(c ? c.real && isReal() : isReal()), deliverable: opt.deliverable || '', needApproval: !!opt.needApproval, kind: opt.kind || null, ref: opt.ref || null, kws: opt.kws || null, link: opt.link || '',
       output: null, history: [], feedback: '',
       level, tier, gap: !!owner && rk(owner) < need, tools: owner ? staffTools(owner) : TIERS[tier].tools.slice(), trace: [], criteria: [], accept: null, step: null, evidence: null, images: []
     };
@@ -229,6 +364,7 @@
   // 仿真推进（未连接 Genspark 时）
   F.step = function (step) {
     S.sim.commands.forEach((c) => {
+      if (['research', 'strategy', 'feasibility'].includes(c.stage) && !c.real && c.planDue && S.sim.min >= c.planDue) simPrep(c);
       if (c.stage === 'plan' && c.planDue && S.sim.min >= c.planDue) afterPlan(c);
       if (c.stage === 'accept' && c.acceptDue && S.sim.min >= c.acceptDue) improve(c, localReview(c));
     });
@@ -271,7 +407,7 @@
     t.status = 'exec'; t.stuck = false; t.error = ''; t.trace = t.trace || [];
     if (a) a.status = 'busy';
     say(t.agentId, wasRework ? '按验收意见返工…' : `${T.short}级执行中…`, 'ai');
-    const base = { ...ctxBase(), ...masterOf(t), goal: c?.goal || '', dept: d?.name, pos: o?.pos || '', owner: o?.name || '', agent: a?.name, task: t.title, deliverable: t.deliverable, tier: t.tier, tools: t.tools, knowledge: knowledgeFor(t.deptId) };
+    const base = { ...ctxBase(), ...masterOf(t), strategy: F.stratText(c, t), goal: c?.goal || '', dept: d?.name, pos: o?.pos || '', owner: o?.name || '', agent: a?.name, task: t.title, deliverable: t.deliverable, tier: t.tier, tools: t.tools, knowledge: knowledgeFor(t.deptId) };
     const P = window.Masters?.get(t.deptId); if (P && !wasRework && !t.trace.length) say(t.agentId, `${P.title}「${P.name}」接手`, 'ai');
     let cur = null;
     try {
@@ -322,7 +458,7 @@
       t.step = 'accept'; t.status = 'verify'; if (a) a.status = 'verify';
       fx(t.deptId, 'qa', '提交验收', '#d97706'); say(t.agentId, '提交独立验收…', 'ai');
       cur = trace(t, 'accept', { status: 'run', detail: `逐条核对 ${t.criteria.length} 条验收标准` });
-      const ac = await AI.call('/task/accept', { ...base, criteria: t.criteria, output: t.output, sources: t.evidence.length });
+      const ac = await AI.call('/task/accept', { ...base, engine: roleModel('accept'), criteria: t.criteria, output: t.output, sources: t.evidence.length });
       if (t.status === 'rejected') return;
       t.accept = ac;
       traceOk(t, cur, { detail: `${ac.met}/${ac.items.length} 条达标${ac.partial ? `、${ac.partial} 条部分` : ''}${ac.miss ? `、${ac.miss} 条未达` : ''} · ${ac.total} 分（门槛 ${ac.threshold}）`, extra: { items: ac.items }, ms: Date.now() - cur.ts });
@@ -380,8 +516,8 @@
     saveState(); refresh();
   }
   // ====================== ⑥½ 汇报材料：Word + Excel + 创意 PPT ======================
-  const engName = () => (ENGINE_LIST.find((x) => x[0] === officeCfg().engine) || [, 'Ultra'])[1];
-  const slmName = (k) => (SLIDE_MODELS.find((x) => x[0] === k) || [, k])[1];
+  const engName = () => modelName(roleModel('exec'));
+  const slmName = (k) => (SLIDE_MODELS.find((x) => x[0] === k) || [, modelName(k)])[1];
   function masterOf(t) { return window.Masters ? Masters.payload(t.deptId) : { engine: officeCfg().engine }; }
   function fallbackPack(t, why) {
     const d = deptOf(t.deptId), its = t.accept?.items || [];
@@ -401,12 +537,12 @@
       fx(t.deptId, 'brain', '汇报材料', '#ea580c');
       return then && then();
     }
-    let cur = trace(t, 'package', { status: 'run', detail: `${P ? P.title + '「' + P.name + '」' : ''}以 ${engName()} 编排 Word / Excel / ${cfg.slides} 页 PPT` });
+    let cur = trace(t, 'package', { status: 'run', detail: `${P ? P.title + '「' + P.name + '」' : ''}联合幻灯片设计师（${mName('slideDesign')}）编排 Word / Excel / ${cfg.slides} 页 PPT` });
     say(t.agentId, '整理汇报材料…', 'ai');
     try {
-      const r = await AI.call('/task/package', { ...ctxBase(), ...masterOf(t), dept: d?.name, task: t.title, deliverable: t.deliverable, criteria: t.criteria, output: t.output, slides: cfg.slides });
+      const r = await AI.call('/task/package', { ...ctxBase(), ...masterOf(t), engine: roleModel('slideDesign'), strategy: F.stratText(cmdOf(t.cmdId), t), dept: d?.name, task: t.title, deliverable: t.deliverable, criteria: t.criteria, output: t.output, slides: cfg.slides });
       t.pack = { doc: r.doc, sheets: r.sheets || [], slides: (r.slides || []).map((s) => ({ ...s, pending: true })), slideModel: cfg.slideModel, engine: r.model, at: stamp() };
-      traceOk(t, cur, { detail: `Word「${r.doc?.title || t.title}」· Excel ${t.pack.sheets.length} 张表 · PPT ${t.pack.slides.length} 页设计`, model: engName(), ms: Date.now() - cur.ts });
+      traceOk(t, cur, { detail: `Word「${r.doc?.title || t.title}」· Excel ${t.pack.sheets.length} 张表 · PPT ${t.pack.slides.length} 页设计`, model: mName('slideDesign'), ms: Date.now() - cur.ts });
     } catch (e) { traceFail(t, cur, e.message); t.pack = fallbackPack(t, e.message); log(t.cmdId, 'esc', `⚠️ 「${short(t.title)}」汇报材料编排失败（${esc(e.message)}），使用基础版`, '#dc2626'); }
     if (t.status === 'rejected') return;
     refresh();
@@ -518,8 +654,8 @@
     S.sim.metrics.approvals++; if (!ok) S.sim.metrics.rejects++;
     const c = cmdOf(ap.cmdId), t = taskOf(ap.taskId);
     if (ap.kind === 'plan' && c && c.stage === 'confirm') {
-      if (ok) { c.confirm = 'approved'; log(c.id, 'confirm', `✔ 老板确认 #${c.no} 拆解方案`, '#059669'); fx('boss', 'brain', '方案确认', '#059669'); dispatch(c); }
-      else { c.replans++; c.feedback = `老板驳回上一版方案：${reason || '方案不满意，请重新拆解'}`; log(c.id, 'confirm', `✖ 老板驳回 #${c.no} 方案${reason ? '：' + esc(reason) : ''} → 重新拆解（第 ${c.replans + 1} 版）`, '#dc2626'); fx('boss', 'brain', '重新拆解', '#dc2626'); plan(c); }
+      if (ok) { ap.status = 'pending'; S.sim.metrics.approvals--; F.decide(c.id, c.pick || c.strategy?.recommend, reason); return; }
+      else { c.replans++; c.revisions = 0; c.feedback = `老板驳回上一版方案：${reason || '方案不满意，请重新规划'}`; log(c.id, 'confirm', `✖ 老板驳回 #${c.no} 方案${reason ? '：' + esc(reason) : ''} → 重新拆解（第 ${c.replans + 1} 版）`, '#dc2626'); fx('boss', 'brain', '重新拆解', '#dc2626'); plan(c); }
     }
     if (ap.kind === 'result' && t && t.status === 'approval') {
       if (ok) { log(t.cmdId, 'approval', `✔ 老板批准「${short(t.title)}」执行`, '#059669'); fx('boss', t.deptId, '批准', '#059669'); deliver(t); }
@@ -571,7 +707,7 @@
     if (c.real && isReal()) {
       let rv = null;
       try {
-        rv = await AI.call('/review', { ...ctxBase(), engine: officeCfg().engine, text: c.text, goal: c.goal, depts: S.depts.map((d) => d.name), results: ts.map((t) => ({ dept: deptOf(t.deptId)?.name, title: t.title, score: t.evals?.total || 0, rework: t.rework, human: !!t.humanPassed, output: String(t.output || '').slice(0, 700) })) });
+        rv = await AI.call('/review', { ...ctxBase(), engine: roleModel('review'), decision: c.decision ? { key: c.decision.key, option: `${c.decision.key} ${c.decision.name}`, recommended: c.decision.recommended, feasibility: c.decision.feas } : null, targets: c.strategy?.targets || [], text: c.text, goal: c.goal, depts: S.depts.map((d) => d.name), results: ts.map((t) => ({ dept: deptOf(t.deptId)?.name, title: t.title, score: t.evals?.total || 0, rework: t.rework, human: !!t.humanPassed, output: String(t.output || '').slice(0, 700) })) });
       } catch (e) { log(c.id, 'accept', `⚠️ AI 验收失败（${esc(e.message)}），使用规则验收`, '#dc2626'); }
       if (c.stage !== 'accept') return;
       improve(c, rv || localReview(c));
@@ -587,12 +723,15 @@
       score, verdict: score >= 85 ? 'achieved' : score >= 70 ? 'partial' : 'failed',
       summary: `${ts.length} 项任务交付，平均 ${Math.round(avg)} 分，返工 ${rw} 次。`,
       lessons: (fbs.length ? fbs.slice(0, 2).map((f) => ({ dept: f.split('：')[0], text: `避免返工：${f.split('：')[1]}` })) : []).concat([{ dept: '全局', text: `「${c.text.slice(0, 16)}」类指令：${pick(['先对齐目标数字再分发', '高风险动作提前准备审批材料', '跨部门任务明确交付接口', '先检索数据再下结论'])}` }]),
-      next: [pick(['扩大检索范围寻找更多机会', '跟进已产出方案的落地数据', '针对返工环节补充数据', '把通过的方案复制到其他区域'])]
+      next: [pick(['扩大检索范围寻找更多机会', '跟进已产出方案的落地数据', '针对返工环节补充数据', '把通过的方案复制到其他区域'])],
+      decision: c.decision ? { score: Math.max(50, Math.min(98, score + (c.decision.follow ? 2 : -2))), effect: `（仿真）方案 ${c.decision.key} 已由 ${ts.length} 个部门承接并交付`, gap: '（仿真）需真实经营数据验证目标达成', nextDecision: '是否追加资源进入第二轮' } : null
     };
   }
   function improve(c, rv) {
     c.stage = 'improve';
     c.acceptance = { score: Math.round(+rv.score || 0), verdict: rv.verdict || 'partial', summary: rv.summary || '' };
+    c.decisionEval = rv.decision || null;
+    if (c.decision && c.decisionEval) { (S.sim.decisions = S.sim.decisions || []).unshift({ cmdId: c.id, no: c.no, text: c.text, key: c.decision.key, name: c.decision.name, follow: c.decision.follow, feas: c.decision.feas, score: c.decisionEval.score, effect: c.decisionEval.effect, accept: c.acceptance.score, at: stamp() }); if (S.sim.decisions.length > 50) S.sim.decisions.length = 50; }
     S.sim.metrics.accepted++;
     // 经验沉淀（下一次执行时注入）
     const ls = (rv.lessons || []).slice(0, 3).map((l) => typeof l === 'string' ? { dept: '全局', text: l } : l).filter((l) => l?.text);
@@ -608,7 +747,7 @@
     });
     c.review = { lessons: ls.map((l) => `${l.dept !== '全局' ? '[' + l.dept + '] ' : ''}${l.text}`), next: (rv.next || []).slice(0, 3), promos };
     const vl = { achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict] || c.acceptance.verdict;
-    log(c.id, 'improve', `📈 #${c.no} 复盘提升：验收 <b>${c.acceptance.score}</b> 分（${vl}）· 沉淀经验 ${ls.length} 条${promos.length ? ' · ' + esc(promos.join('、')) : ''} · <a class="lnk" onclick="openCmdModal('${c.id}')">查看复盘</a>`, '#7c3aed');
+    log(c.id, 'improve', `📈 #${c.no} 复盘提升：验收 <b>${c.acceptance.score}</b> 分（${vl}）${c.decisionEval ? ` · 老板决策见效 <b>${c.decisionEval.score}</b> 分` : ''}· 沉淀经验 ${ls.length} 条${promos.length ? ' · ' + esc(promos.join('、')) : ''} · <a class="lnk" onclick="openCmdModal('${c.id}')">查看复盘</a>`, '#7c3aed');
     fx('brain', 'kb', '经验沉淀', '#7c3aed'); setTimeout(() => fx('kb', 'brain', '知识注入', '#7c3aed'), 1500);
     c.stage = 'done'; c.doneAt = stamp();
     // 及时归档：各部门 Word / Excel / PPT + 执行表 + 验收 + 复盘
@@ -685,7 +824,7 @@
 
   // ====================== 统计 ======================
   F.passRate = () => S.sim.metrics.first ? Math.round(S.sim.metrics.pass1 / S.sim.metrics.first * 100) : 100;
-  F.col = (t) => ({ queued: 'dispatch', exec: 'exec', rework: 'exec', verify: 'verify', approval: 'approve', review: 'approve', done: 'deliver' }[t.status] || null);
+  F.col = (t) => ({ queued: 'exec', exec: 'exec', rework: 'exec', verify: 'verify', pack: 'deliver', approval: 'approve', review: 'approve', done: 'deliver' }[t.status] || null);
   F.active = () => S.sim.commands.filter((c) => !['done', 'cancelled'].includes(c.stage));
   F.stats = function () {
     const T = S.sim.tasks, A = S.sim.approvals.filter((a) => a.status === 'pending');
@@ -700,18 +839,19 @@
     };
   };
   F.cmdSteps = function (c) {
-    // 返回 8 个阶段的状态：done / active / pending / skip
+    // 返回 9 个阶段的状态：done / active / pending / skip
     const st = STAGES.map(() => 'pending');
-    const idx = { plan: 0, confirm: 1, run: 3, accept: 7, improve: 7, done: 8, cancelled: -1 }[c.stage];
     if (c.stage === 'cancelled') return st.map(() => 'skip');
-    if (c.stage === 'plan') { st[0] = 'active'; return st; }
-    if (c.stage === 'confirm') { st[0] = 'done'; st[1] = 'active'; return st; }
-    st[0] = 'done'; st[1] = c.confirm === 'approved' ? 'done' : 'skip'; st[2] = 'done';
-    if (idx >= 7) { for (let i = 3; i < 7; i++) st[i] = 'done'; st[7] = c.stage === 'done' ? 'done' : 'active'; return st; }
+    const pre = { plan: 0, research: 0, strategy: 1, feasibility: 2, confirm: 3 }[c.stage];
+    if (pre !== undefined) { for (let i = 0; i < pre; i++) st[i] = c.skipPrep ? 'skip' : 'done'; st[pre] = 'active'; return st; }
+    for (let i = 0; i < 3; i++) st[i] = c.skipPrep || !c.strategy ? (c.research || c.strategy ? 'done' : 'skip') : 'done';
+    st[3] = c.confirm === 'approved' ? 'done' : 'skip';
+    if (['accept', 'improve', 'done'].includes(c.stage)) { for (let i = 4; i < 8; i++) st[i] = 'done'; st[8] = c.stage === 'done' ? 'done' : 'active'; return st; }
     const ts = c.taskIds.map(taskOf).filter((t) => t && t.status !== 'rejected');
     const pos = ts.map((t) => STAGES.findIndex((s) => s.k === F.col(t)));
-    for (let i = 3; i < 7; i++) st[i] = pos.some((p) => p === i) ? 'active' : pos.length && pos.every((p) => p > i) ? 'done' : 'pending';
-    if (st[2] === 'done' && pos.some((p) => p === 2)) st[2] = 'active';
+    for (let i = 4; i < 8; i++) st[i] = pos.some((p) => p === i) ? 'active' : pos.length && pos.every((p) => p > i) ? 'done' : 'pending';
+    if (ts.length && ts.every((t) => t.status === 'done')) st[7] = 'done';
     return st;
   };
+
 })();

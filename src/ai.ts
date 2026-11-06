@@ -11,7 +11,10 @@ const base = (e: Bindings) => (e.GSK_BASE_URL || 'https://www.genspark.ai').repl
 // Ultra 推理引擎：所有智能体输出默认使用 Genspark 顶级模型 + high 推理深度（可在后台「大师智库」切换引擎）
 const ENGINES: Record<string, string> = { 'gpt-5.5': 'GPT-5.5 Ultra', 'claude-opus-5-5': 'Claude Opus 5.5 Ultra', 'gpt-6.1-sol': 'GPT-6.1 Sol Ultra', 'gpt-6-astra': 'GPT-6 Astra Ultra' }
 const model = (e: Bindings) => (e.AI_MODEL && ENGINES[e.AI_MODEL]) ? e.AI_MODEL : 'gpt-5.5'
-const eng = (b: any, e: Bindings) => (b && ENGINES[b.engine]) ? b.engine : model(e)
+const MODEL_RE = /^[a-z0-9][a-z0-9.\-]{1,60}$/i
+// 模型由前端「模型配置中心」按角色选择（列表来自 Genspark CLI 同一接口实时读取），这里只做格式校验
+const eng = (b: any, e: Bindings) => (b && typeof b.engine === 'string' && MODEL_RE.test(b.engine)) ? b.engine : model(e)
+const eff = (b: any) => ['medium', 'high', 'xhigh'].includes(b?.effort) ? b.effort : 'high'
 
 class AiError extends Error { constructor(msg: string, public code = 500) { super(msg) } }
 
@@ -39,7 +42,7 @@ async function tool(e: Bindings, name: string, args: Record<string, unknown>) {
 // ---- 调用大模型（Genspark LLM 代理，同一授权） ----
 async function llm(e: Bindings, system: string, user: string, opt: { json?: boolean; effort?: string; model?: string } = {}) {
   if (!e.GSK_API_KEY) throw new AiError('未配置 Genspark 授权（GSK_API_KEY）', 503)
-  const body: any = { model: opt.model || model(e), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], reasoning_effort: 'high' }
+  const body: any = { model: opt.model || model(e), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], reasoning_effort: (opt.effort && opt.effort !== 'low') ? opt.effort : 'high' }
   if (opt.json !== false && !String(body.model).startsWith('claude')) body.response_format = { type: 'json_object' }
   // 一律流式读取：Ultra 深度推理耗时较长，上游对非流式请求约 120s 超时
   body.stream = true
@@ -211,9 +214,9 @@ ai.post('/review', async (c) => {
   const results = (b.results || []).slice(0, 10).map((r: any, i: number) => `【${i + 1}】${clip(r.dept, 20)}｜${clip(r.title, 40)}｜校验${Math.round(+r.score || 0)}分｜返工${+r.rework || 0}次${r.human ? '｜人工通过' : ''}\n${clip(r.output, 700)}`).join('\n\n')
   const out = await llm(c.env,
     '你是企业的 AI 首席运营官，对一条老板指令的整体执行结果做验收与复盘：判断目标是否达成、提炼可复用经验、给出下一轮改进方向。客观、具体，不夸大。输出 JSON。',
-    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 200)}\n目标：${clip(b.goal, 120)}\n部门：${clip((b.depts || []).join('、'), 300)}\n\n【各部门交付】\n${results}\n\n输出 JSON：{"score":0-100（整体完成质量与目标贴合度）,"verdict":"achieved|partial|failed","summary":"60字内验收结论","lessons":[{"dept":"适用部门名称，通用写全局","text":"40字内可复用经验，写成下次照做的规则"}],"next":["下一轮可迭代的方向，每条30字内，1-3条"]}\nlessons 给 1-3 条。`, { model: eng(b, c.env) })
+    `企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n老板指令：${clip(b.text, 200)}\n目标：${clip(b.goal, 120)}\n部门：${clip((b.depts || []).join('、'), 300)}${b.decision ? `\n\n【老板决策】选定方案 ${clip(b.decision.option, 40)}${b.decision.recommended && b.decision.recommended !== b.decision.key ? `（AI 推荐的是 ${clip(b.decision.recommended, 10)}）` : '（与 AI 推荐一致）'}；可行性校验 ${+b.decision.feasibility || 0} 分\n量化目标：${(b.targets || []).slice(0, 6).map((t: any) => `${clip(t.kpi, 30)}→${clip(t.target, 40)}`).join('；')}` : ''}\n\n【各部门交付】\n${results}\n\n输出 JSON：{"score":0-100（整体完成质量与目标贴合度）,"verdict":"achieved|partial|failed","summary":"60字内验收结论","lessons":[{"dept":"适用部门名称，通用写全局","text":"40字内可复用经验，写成下次照做的规则"}],"next":["下一轮可迭代的方向，每条30字内，1-3条"],"decision":{"score":0-100（老板这次决策的质量与见效度：所选方案是否被各部门成果有效承接、目标是否有可执行路径）,"effect":"决策带来的可见结果，≤60字","gap":"距离目标还差什么，≤50字","nextDecision":"老板下一步最该拍板的一件事，≤40字"}}\nlessons 给 1-3 条。`, { model: eng(b, c.env), effort: eff(b) })
   const lessons = (out.lessons || []).slice(0, 3).map((l: any) => typeof l === 'string' ? { dept: '全局', text: clip(l, 80) } : { dept: clip(l.dept || '全局', 20), text: clip(l.text, 80) }).filter((l: any) => l.text)
-  return c.json({ ok: true, score: Math.max(0, Math.min(100, Math.round(+out.score || 0))), verdict: ['achieved', 'partial', 'failed'].includes(out.verdict) ? out.verdict : 'partial', summary: clip(out.summary, 120), lessons, next: (out.next || []).slice(0, 3).map((x: any) => clip(x, 60)) })
+  return c.json({ ok: true, score: Math.max(0, Math.min(100, Math.round(+out.score || 0))), verdict: ['achieved', 'partial', 'failed'].includes(out.verdict) ? out.verdict : 'partial', summary: clip(out.summary, 120), lessons, next: (out.next || []).slice(0, 3).map((x: any) => clip(x, 60)), decision: out.decision ? { score: Math.max(0, Math.min(100, Math.round(+out.decision.score || 0))), effect: clip(out.decision.effect, 120), gap: clip(out.decision.gap, 100), nextDecision: clip(out.decision.nextDecision, 80) } : null })
 })
 
 
@@ -248,7 +251,7 @@ ${lines(P.resume, 5).length ? `【履历】\n- ${lines(P.resume, 5).join('\n- ')
 }
 const persona = (b: any) => `${clip(b.persona?.title || (b.dept || '') + '专家', 30)}「${clip(b.persona?.name || '', 12)}」`
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-const ctxOf = (b: any) => `当前日期：${today()}（检索与时间表述以此为准，优先近 12 个月信息）\n企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n主营：${clip(b.business, 150)}\n部门：${clip(b.dept, 20)}${b.goal ? `\n所属老板指令目标：${clip(b.goal, 150)}` : ''}`
+const ctxOf = (b: any) => `当前日期：${today()}（检索与时间表述以此为准，优先近 12 个月信息）\n企业：${clip(b.company, 60)}（${clip(b.industry, 40)}）\n主营：${clip(b.business, 150)}\n部门：${clip(b.dept, 20)}${b.goal ? `\n所属老板指令目标：${clip(b.goal, 300)}` : ''}${b.strategy ? `\n【公司级发展规划（已经可行性校验与老板确认，部门成果必须与之一致）】\n${clip(b.strategy, 900)}` : ''}`
 
 ai.post('/task/plan', async (c) => {
   const b = await c.req.json<any>()
@@ -257,7 +260,7 @@ ai.post('/task/plan', async (c) => {
   const out = await llm(c.env,
     `${personaBlock(b)}\n\n你以「${T.name}」水准完成任务，先做执行规划：抓住任务本质 → 选定方法论框架 → 制定可量化、可核验的验收标准 → 规划需要调用的 Genspark 工具。验收标准必须包含数字、数量、格式或明确的判定条件，禁止“全面、深入、有效”这类无法核验的措辞。输出 JSON。`,
     `${ctxOf(b)}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable, 120)}\n能力级别要求：${T.rule}\n\n【可用工具（决策调用库）】\n${tools.map((x) => '- ' + TOOL_DESC[x]).join('\n') || '（无外部工具，仅凭专业知识）'}\n工具调用上限：${T.calls} 次${(b.knowledge || []).length ? `\n\n【企业经验库】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}${b.feedback ? `\n\n【上一轮验收未通过，问题】${clip(b.feedback, 400)}` : ''}\n\n输出 JSON：{"understanding":"任务本质与成功标志，50字内","framework":"采用的方法论/框架及用法，60字内","criteria":[{"text":"可量化验收标准，30字内"}],"calls":[{"tool":"${callable.join('|') || 'none'}","query":"关键词或画面描述","queries":["batch 时填"],"url":"doc 时填","why":"15字内"}],"read":需要深读的网页数(0-${T.read}),"outline":["成果章节标题，4-7个"]}\n验收标准正好 ${T.crit} 条；calls 不超过 ${T.calls} 个，检索词要具体（含行业、地区、年份、产品等），不需要外部信息时 calls 为空数组。`,
-    { model: eng(b, c.env) })
+    { model: eng(b, c.env), effort: eff(b) })
   const calls = (Array.isArray(out.calls) ? out.calls : []).filter((x: any) => callable.includes(x?.tool)).slice(0, T.calls).map((x: any) => ({ tool: x.tool, query: clip(x.query, 120), queries: (x.queries || []).slice(0, 4).map((q: any) => clip(q, 60)), url: clip(x.url, 400), why: clip(x.why, 40) }))
   const criteria = (out.criteria || []).slice(0, T.crit).map((x: any) => clip(typeof x === 'string' ? x : x.text, 80)).filter(Boolean)
   return c.json({ ok: true, tier: b.tier, model: eng(b, c.env), understanding: clip(out.understanding, 120), framework: clip(out.framework, 140), criteria, calls, read: tools.includes('crawl') ? Math.max(0, Math.min(T.read, +out.read || 0)) : 0, outline: (out.outline || []).slice(0, 8).map((x: any) => clip(x, 30)) })
@@ -321,7 +324,7 @@ ai.post('/task/produce', async (c) => {
 6. 能力级别要求：${T.rule}
 7. 篇幅不超过 ${T.words} 字。高风险动作（报价签约、投放预算、对外发布、人事、支付）只写方案与审批要点，不能声称已经执行。`,
     `${ctxOf(b)}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable, 120)}\n方法论框架：${clip(b.framework, 160)}\n成果章节：${(b.outline || []).map((x: any) => clip(x, 30)).join(' / ')}\n\n【验收标准】\n${(b.criteria || []).map((x: any, i: number) => `${i + 1}. ${clip(x, 80)}`).join('\n')}${(b.knowledge || []).length ? `\n\n【企业经验库（必须遵循）】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}\n\n【证据包】\n${ev || '（本任务未调用外部工具，仅基于专业知识；具体数字须标注估算）'}${imgs ? `\n\n【可嵌入成果的视觉稿】\n${imgs}` : ''}${b.feedback ? `\n\n【上一版验收未通过——必须逐条修正】\n${clip(b.feedback, 600)}\n【上一版成果】\n${clip(b.previous, 2500)}` : ''}`,
-    { json: false, model: eng(b, c.env) }) as string
+    { json: false, model: eng(b, c.env), effort: eff(b) }) as string
   return c.json({ ok: true, output, model: eng(b, c.env), chars: output.length })
 })
 
@@ -332,7 +335,7 @@ ai.post('/task/accept', async (c) => {
   const out = await llm(c.env,
     `你是独立验收官，不偏袒执行方。执行方的专业身份是${persona(b)}，其边界：${[...lines(b.persona?.boundaries, 8), ...lines(b.rules, 8)].join('；') || '无'}；违反边界的条目判为 miss。` + '逐条按验收标准核对成果，并引用成果原文作为证据；核对引用标注 [n] 是否在来源列表中。没有来源、也没标注「估算」的具体数据，算作准确性问题。空话套话扣业务价值分。输出 JSON。',
     `${ctxOf(b)}\n任务：${clip(b.task, 200)}\n能力级别：${T.name}（${T.rule}）\n\n【验收标准】\n${crit.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n【可用来源数】${+b.sources || 0}\n\n【待验收成果】\n${clip(b.output, 9000)}\n\n输出 JSON：{"items":[{"i":标准序号,"status":"met|partial|miss","evidence":"引用成果原文，50字内","note":"判定理由，30字内"}],"acc":0-100,"evi":0-100,"time":0-100,"comp":0-100,"val":0-100,"feedback":"未通过时给出具体修改清单，120字内；通过时写亮点，60字内"}\n维度：acc 准确性；evi 证据溯源；time 完整度；comp 合规安全；val 业务价值（可落地、能带来订单/降本/提效）。`,
-    { model: eng(b, c.env) })
+    { model: eng(b, c.env), effort: eff(b) })
   const sc = (k: string) => Math.max(0, Math.min(100, Math.round(+out[k] || 0)))
   const evals = { acc: sc('acc'), evi: sc('evi'), time: sc('time'), comp: sc('comp'), val: sc('val') }
   const items = crit.map((text, i) => { const it = (out.items || []).find((x: any) => +x.i === i + 1) || (out.items || [])[i] || {}; return { text, status: ['met', 'partial', 'miss'].includes(it.status) ? it.status : 'miss', evidence: clip(it.evidence, 100), note: clip(it.note, 60) } })
@@ -354,7 +357,7 @@ ai.post('/persona/batch', async (c) => {
   const out = await llm(c.env,
     '你是顶级猎头与组织设计专家，为企业的每个部门配置一位「行业 × 部门」顶级大师作为首席智能体。大师要有鲜明的专业身份、可信的履历（虚构人物，但符合行业真实职业路径，不冒用真实名人）、可执行的思维方式和清晰的工作边界。输出 JSON。',
     `企业：${clip(b.company, 60)}\n行业：${clip(b.industry, 60)}\n主营：${clip(b.business, 150)}\n\n【部门（id｜名称｜KPI｜职责）】\n${depts}\n\n为每个部门输出一位大师，JSON：{"personas":[{"deptId":"必须与上面 id 一致","title":"如「零售业营销大师」：行业简称+部门专业+大师，≤12字","name":"中文姓名","motto":"一句话信条，≤20字","resume":["3-4 条履历，每条≤40字，含年限/规模/代表战绩数字"],"thinking":["4-5 步思维方式，每步≤30字，体现该行业该岗位的专业思考顺序"],"frameworks":["4-6 个惯用方法论/模型名"],"style":"表达风格，≤30字","boundaries":["3-4 条工作边界/红线，每条≤30字，如合规、数据口径、权限"],"kpis":["该大师对结果负责的 3 个量化指标"]}]}`,
-    { model: eng(b, c.env) })
+    { model: eng(b, c.env), effort: eff(b) })
   const ids = new Set((b.depts || []).map((d: any) => d.id))
   const personas = (out.personas || []).filter((p: any) => ids.has(p.deptId)).map((p: any) => ({
     deptId: p.deptId, title: clip(p.title, 20), name: clip(p.name, 8), motto: clip(p.motto, 40), resume: lines(p.resume, 4, 60), thinking: lines(p.thinking, 5, 50),
@@ -369,26 +372,28 @@ ai.post('/task/package', async (c) => {
   const b = await c.req.json<any>()
   const n = Math.max(3, Math.min(8, +b.slides || 4))
   const out = await llm(c.env,
-    `${personaBlock(b)}\n\n你要把已通过验收的成果，整理成向老板汇报用的三件套：Excel 数据表 + 创意 PPT 的逐页设计。数据必须与成果一致，不得新增成果中没有的事实；成果中标注“估算”的数据在表格备注里继续标注估算。输出 JSON。`,
+    `${personaBlock(b)}\n\n你同时是顶级商业演示设计师（麦肯锡式结构 + 发布会级视觉），要把已通过验收的成果，整理成向老板汇报用的三件套：Excel 数据表 + 创意 PPT 的逐页设计。
+PPT 设计原则：金字塔原理（结论先行，每页只讲一个观点，标题就是结论句）；SCQA 叙事线（情境→冲突→答案→行动）；每页要有一个与内容强相关、让人一眼记住的视觉隐喻；数字要大、文字要少；最后一页必须是老板需要拍板的决策项。数据必须与成果一致，不得新增成果中没有的事实；成果中标注“估算”的数据在表格备注里继续标注估算。输出 JSON。`,
     `${ctxOf(b)}\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable, 120)}\n\n【验收标准】\n${lines(b.criteria, 6).map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n【已验收成果（Markdown）】\n${clip(b.output, 9000)}\n\n输出 JSON：{
 "doc":{"title":"Word 文档标题，≤24字","subtitle":"副标题，≤30字","summary":"给老板的 3 句话摘要"},
 "sheets":[{"name":"工作表名≤12字","title":"表标题","columns":["列名"],"rows":[["单元格，数值用数字类型"]],"note":"数据口径/来源/估算说明"}],
-"slides":[{"layout":"cover|insight|data|plan|risk|close","title":"页标题≤14字","subtitle":"≤22字，可空","points":["页面上展示的要点，最多3条，每条≤14字"],"speaker":"讲稿，≤150字","visual":"画面创意：视觉隐喻/插画/图表类型与内容，≤60字"}]
+"slides":[{"layout":"cover|insight|data|plan|risk|close","title":"页标题≤14字","subtitle":"≤22字，可空","points":["页面上展示的要点，最多3条，每条≤14字"],"speaker":"讲稿，≤150字","visual":"画面创意：视觉隐喻/插画/图表类型与内容，≤80字","art":"给图像模型的美术指导：构图、主体位置、配色、光影、风格、文字排版位置，≤120字"}]
 }
 要求：sheets 2-4 张——必须包含成果中的核心数据表，并有一张「行动计划」表（列：动作/负责岗位/开始/完成/量化目标/状态）；每张表 3-30 行。slides 正好 ${n} 页：第 1 页 cover（部门汇报封面），中间页覆盖核心结论、关键数据、行动计划，最后一页 close（需要老板拍板的事项）；每页 points 必须是成果中的真实数字或结论。`,
-    { model: eng(b, c.env) })
+    { model: eng(b, c.env), effort: eff(b) })
   const cell = (v: any) => (typeof v === 'number' && isFinite(v)) ? v : clip(v, 200)
   const sheets = (out.sheets || []).slice(0, 4).map((sh: any, i: number) => {
     const cols = lines(sh.columns, 12, 30); const w = Math.max(1, cols.length)
     return { name: clip(sh.name || `表${i + 1}`, 12).replace(/[\\/?*[\]:]/g, ''), title: clip(sh.title, 40), columns: cols, rows: (sh.rows || []).slice(0, 60).map((r: any) => (Array.isArray(r) ? r : [r]).slice(0, w).map(cell)), note: clip(sh.note, 200) }
   }).filter((sh: any) => sh.columns.length && sh.rows.length)
-  const slides = (out.slides || []).slice(0, n).map((sl: any) => ({ layout: clip(sl.layout || 'insight', 10), title: clip(sl.title, 20), subtitle: clip(sl.subtitle, 30), points: lines(sl.points, 3, 18), speaker: clip(sl.speaker, 300), visual: clip(sl.visual, 120) }))
+  const slides = (out.slides || []).slice(0, n).map((sl: any) => ({ layout: clip(sl.layout || 'insight', 10), title: clip(sl.title, 20), subtitle: clip(sl.subtitle, 30), points: lines(sl.points, 3, 18), speaker: clip(sl.speaker, 300), visual: clip(sl.visual, 160), art: clip(sl.art, 300) }))
   return c.json({ ok: true, doc: { title: clip(out.doc?.title || b.task, 40), subtitle: clip(out.doc?.subtitle, 50), summary: clip(out.doc?.summary, 300) }, sheets, slides, model: eng(b, c.env) })
 })
-const SLIDE_MODELS: Record<string, { name: string; credits: number }> = { 'gpt-image-2': { name: 'GPT Image 2', credits: 30 }, 'nano-banana-2.1': { name: 'Nano Banana 2.1', credits: 19 } }
+const SLIDE_MODELS: Record<string, { name: string; credits: number }> = { 'gpt-image-2': { name: 'GPT Image 2', credits: 30 }, 'gpt-image-2.5': { name: 'GPT Image 2.5', credits: 30 }, 'nano-banana-2.1': { name: 'Nano Banana 2.1', credits: 19 } }
+const IMG_RE = /^[a-z0-9][a-z0-9.\-/]{1,60}$/i
 ai.post('/task/slide', async (c) => {
   const b = await c.req.json<any>()
-  const m = SLIDE_MODELS[b.model] ? b.model : 'gpt-image-2'
+  const m = typeof b.model === 'string' && IMG_RE.test(b.model) ? b.model : 'gpt-image-2'
   const sl = b.slide || {}
   const pts = lines(sl.points, 3, 18)
   const kind = ({ cover: '封面页：大标题居中或左对齐，强烈的主视觉', insight: '洞察页：一个核心结论 + 视觉隐喻插画', data: '数据页：用大号数字卡片或简洁信息图呈现要点', plan: '计划页：时间轴/路线图样式呈现要点', risk: '风险页：矩阵或盾牌类视觉呈现要点', close: '结尾页：决策事项清单，醒目的行动号召' } as any)[sl.layout] || '内容页'
@@ -396,14 +401,107 @@ ai.post('/task/slide', async (c) => {
 品牌：${clip(b.company, 30)} · ${clip(b.dept, 16)}。设计风格：现代、明亮、专业、有创意，浅色背景，主色 ${clip(b.color || '#2563eb', 10)}，大标题醒目，留白充足，信息层级清晰，适合大屏汇报。
 页面上只允许出现以下中文文字，必须逐字准确、字形清晰、不得出现其他文字、英文乱码或错别字：
 标题：“${clip(sl.title, 20)}”${sl.subtitle ? `\n副标题：“${clip(sl.subtitle, 30)}”` : ''}${pts.length ? `\n要点：${pts.map((x) => `“${x}”`).join('、')}` : ''}
-画面创意：${clip(sl.visual, 120)}。
+画面创意：${clip(sl.visual, 160)}。${sl.art ? `\n美术指导：${clip(sl.art, 300)}` : ''}
 不要水印，不要页码以外的装饰文字，不要人物面部特写。`
   const args: any = { query, model: m, aspect_ratio: '16:9', image_size: b.size === '2k' ? '2k' : '1k' }
   if (m === 'nano-banana-2.1') args.thinking_level = 'medium'
   const d = await tool(c.env, 'image_generation', args)
   const g = d?.generated_images?.[0]; const u = g?.image_urls?.[0]
   if (!u) throw new AiError('幻灯片生成失败', 502)
-  return c.json({ ok: true, url: fileUrl(u), model: m, credits: g.estimated_credits ?? SLIDE_MODELS[m].credits })
+  return c.json({ ok: true, url: fileUrl(u), model: m, credits: g.estimated_credits ?? SLIDE_MODELS[m]?.credits ?? 30 })
+})
+
+// =====================================================================
+// 模型配置中心：与 gsk CLI 同源读取可用模型（/api/llm_proxy/v1/models + /api/tool_cli/tools）
+// =====================================================================
+const IMG_SKIP = /bbox|rmbg|upscale|text-removal|outpaint/i
+ai.get('/models', async (c) => {
+  const e = c.env; if (!e.GSK_API_KEY) throw new AiError('未配置 Genspark 授权（GSK_API_KEY）', 503)
+  const [m, t] = await Promise.all([
+    fetch(`${base(e)}/api/llm_proxy/v1/models`, { headers: { Authorization: `Bearer ${e.GSK_API_KEY}` } }).then((r) => r.json()).catch(() => null),
+    fetch(`${base(e)}/api/tool_cli/tools`, { headers: { 'X-Api-Key': e.GSK_API_KEY, 'X-GSK-CLI-Version': 'enterprise-brain/1.0' } }).then((r) => r.json()).catch(() => null),
+  ])
+  const llms = ((m as any)?.data || []).map((x: any) => ({ id: String(x.id), vendor: String(x.owned_by || '') })).filter((x: any) => MODEL_RE.test(x.id))
+  const ig = ((t as any)?.tools || []).find((x: any) => x.name === 'image_generation')
+  const images = ((ig?.parameters?.properties?.model?.enum as string[]) || ['gpt-image-2', 'nano-banana-2.1']).filter((x) => !IMG_SKIP.test(x))
+  return c.json({ ok: true, llms, images, source: 'gsk tool_cli / llm_proxy', at: Date.now() })
+})
+ai.post('/models/test', async (c) => {
+  const b = await c.req.json<any>(); const t0 = Date.now()
+  const out = await llm(c.env, '你是连通性测试助手。输出 JSON。', '用一句话（20字内）介绍你自己擅长什么。输出 JSON：{"hi":"..."}', { model: eng(b, c.env), effort: 'medium' })
+  return c.json({ ok: true, model: eng(b, c.env), reply: clip(out.hi || JSON.stringify(out), 80), ms: Date.now() - t0 })
+})
+
+// =====================================================================
+// 老板指令 → 深度研究 → 发展规划（多创意方案）→ 可行性校验 → 老板决策 → 分发
+// =====================================================================
+const cmdCtx = (b: any) => `当前日期：${today()}\n企业：${clip(b.company, 60)}（${clip(b.industry, 60)}）\n主营：${clip(b.business, 200)}${b.profile ? `\n企业画像：${clip(b.profile, 700)}` : ''}\n老板指令：${clip(b.text, 300)}${(b.knowledge || []).length ? `\n企业经验库：\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}`
+
+ai.post('/cmd/research/plan', async (c) => {
+  const b = await c.req.json<any>()
+  const out = await llm(c.env,
+    '你是顶级产业研究员（券商首席分析师 + 咨询合伙人）。拿到老板指令后，先想清楚：要做对这件事，必须先弄清哪些事实？然后设计能拿到真实数据的检索计划。检索词必须具体（行业细分、地区、年份、指标名、政策名、竞品名），优先能找到官方统计、行业协会、上市公司公告、招投标与政策文件的关键词。输出 JSON。',
+    `${cmdCtx(b)}\n\n输出 JSON：{"essence":"指令背后真正要解决的问题，40字内","questions":["必须先回答的关键问题，4-5 个，每个≤30字"],"queries":["检索词，6-8 个，每个≤30字"],"dataNeeds":["需要的关键数据指标，4-6 个，如市场规模/增速/价格区间/竞品份额/政策补贴额度"]}`,
+    { model: eng(b, c.env), effort: eff(b) })
+  return c.json({ ok: true, essence: clip(out.essence, 80), questions: lines(out.questions, 5, 60), queries: lines(out.queries, 8, 60), dataNeeds: lines(out.dataNeeds, 6, 40), model: eng(b, c.env) })
+})
+
+ai.post('/cmd/research/synth', async (c) => {
+  const b = await c.req.json<any>()
+  const ev = (b.evidence || []).slice(0, 18).map((x: any, i: number) => `[${i + 1}] ${clip(x.title, 80)}（${clip(x.url, 200)}）\n${clip(x.text || x.snippet, 1400)}`).join('\n\n')
+  const out = await llm(c.env,
+    '你是顶级产业研究员。基于证据包写一份给老板看的深度研究简报：只陈述证据能支撑的事实，引用 [n]；推断必须标注「推断」；每个关键数字都要给出来源或口径。特别要划清「真实数据边界」——哪些数字是有据可查的、哪些只是估算、哪些信息缺失——后续规划的目标不得超出这个边界。输出 JSON。',
+    `${cmdCtx(b)}\n指令本质：${clip(b.essence, 100)}\n关键问题：${lines(b.questions, 5, 60).join('；')}\n\n【证据包】\n${ev || '（无外部证据）'}\n\n输出 JSON：{"summary":"研究结论，3 句话，含关键数字","findings":[{"text":"关键发现，≤60字","src":[证据序号],"kind":"fact|inference"}],"data":[{"metric":"指标","value":"数值+单位","source":"来源标题或[n]","confidence":"high|mid|low"}],"boundaries":["真实数据边界：规划时必须遵守的约束，如『公开数据显示行业增速约 X%，目标增速不应超过 Y%』，3-5 条"],"opportunities":["机会，3-4 条，≤40字"],"risks":["风险，3-4 条，≤40字"],"gaps":["信息缺口：需要企业内部数据或人工确认的，2-4 条"],"answers":[{"q":"关键问题","a":"基于证据的回答，≤60字"}]}\nfindings 6-10 条，data 4-10 条。`,
+    { model: eng(b, c.env), effort: eff(b) })
+  const n = (b.evidence || []).length
+  return c.json({ ok: true, model: eng(b, c.env),
+    summary: clip(out.summary, 400),
+    findings: (out.findings || []).slice(0, 10).map((x: any) => ({ text: clip(x.text, 120), src: (Array.isArray(x.src) ? x.src : []).map((v: any) => +v).filter((v: number) => v >= 1 && v <= n).slice(0, 4), kind: x.kind === 'fact' ? 'fact' : 'inference' })),
+    data: (out.data || []).slice(0, 10).map((x: any) => ({ metric: clip(x.metric, 40), value: clip(x.value, 60), source: clip(x.source, 80), confidence: ['high', 'mid', 'low'].includes(x.confidence) ? x.confidence : 'mid' })),
+    boundaries: lines(out.boundaries, 5, 120), opportunities: lines(out.opportunities, 4, 80), risks: lines(out.risks, 4, 80), gaps: lines(out.gaps, 4, 80),
+    answers: (out.answers || []).slice(0, 5).map((x: any) => ({ q: clip(x.q, 60), a: clip(x.a, 120) })),
+    sources: (b.evidence || []).slice(0, 18).map((x: any) => ({ title: clip(x.title, 100), url: x.url })) })
+})
+
+const resText = (r: any) => r ? `研究结论：${clip(r.summary, 400)}\n关键数据：\n${(r.data || []).slice(0, 10).map((d: any) => `- ${d.metric}：${d.value}（${d.source}，可信度${d.confidence}）`).join('\n')}\n真实数据边界（必须遵守）：\n${lines(r.boundaries, 5, 120).map((x) => '- ' + x).join('\n')}\n机会：${lines(r.opportunities, 4).join('；')}\n风险：${lines(r.risks, 4).join('；')}\n信息缺口：${lines(r.gaps, 4).join('；')}` : '（未做研究）'
+
+ai.post('/cmd/strategy', async (c) => {
+  const b = await c.req.json<any>()
+  const depts = (b.depts || []).map((d: any) => `${d.id}:${d.name}`).join('，')
+  const out = await llm(c.env,
+    `你是企业的首席战略官 + 创意总监。基于深度研究，为老板指令制定发展规划：
+1. 先给出一句话核心判断（thesis）。
+2. 给出 3 个差异化明显、有创意的方案（不是同一思路的大中小三档）：至少 1 个常规稳健方案、1 个借力外部资源/生态的方案、1 个用 AI 或新模式重构打法的创新方案；每个写清投入、预期回报、风险、周期。
+3. 推荐其一并说明理由。
+4. 目标必须量化，且每个目标都要写出依据（来自研究中的真实数据或明确的估算口径）——不得超出「真实数据边界」。
+5. 拆解为 3-6 个部门任务，每个任务对应一个目标或里程碑；按难度定能力级别：std 一般级、master 大师级、leader 超级领袖级；高风险动作（追加预算、群发触达、报价签约、人事、支付、对外发布）needApproval=true。
+输出 JSON。`,
+    `${cmdCtx(b)}\n\n【深度研究】\n${resText(b.research)}${b.chosen ? `\n\n【老板已选定方案「${clip(b.chosen, 40)}」——必须以此方案为主线重新输出目标、里程碑与部门任务，recommend 填该方案 key】` : ''}${b.feedback ? `\n\n【可行性校验 / 老板提出的问题——本版必须逐条修正】\n${clip(b.feedback, 900)}` : ''}\n\n可用部门（id:名称）：${depts}\n\n输出 JSON：{"goal":"可衡量目标，50字内","thesis":"核心判断，60字内","options":[{"key":"A","name":"方案名≤12字","idea":"创意与打法，≤80字","invest":"投入（金额/人力，写口径）","return":"预期回报（量化）","risk":"主要风险","period":"周期","fit":"与企业资源的匹配度，≤30字"}],"recommend":"A|B|C","why":"推荐理由，≤80字","targets":[{"kpi":"指标","base":"现状/基线（无则写待确认）","target":"目标值","basis":"依据：引用研究数据或估算口径"}],"milestones":[{"when":"如 第2周 / 30天","what":"里程碑，≤30字","owner":"部门名"}],"notdo":["明确不做的事 / 边界，2-3 条"],"tasks":[{"deptId":"必须是上面的id","title":"任务≤24字","deliverable":"交付物≤30字","level":"std|master|leader","sla":60-480,"needApproval":true/false,"link":"对应的目标或里程碑，≤20字"}]}`,
+    { model: eng(b, c.env), effort: eff(b) })
+  const ids = new Set((b.depts || []).map((d: any) => d.id))
+  const options = (out.options || []).slice(0, 3).map((o: any, i: number) => ({ key: clip(o.key || 'ABC'[i], 2), name: clip(o.name, 24), idea: clip(o.idea, 160), invest: clip(o.invest, 80), return: clip(o.return, 80), risk: clip(o.risk, 80), period: clip(o.period, 30), fit: clip(o.fit, 60) }))
+  const tasks = (out.tasks || []).filter((t: any) => ids.has(t.deptId)).slice(0, 6).map((t: any) => ({ deptId: t.deptId, title: clip(t.title, 40), deliverable: clip(t.deliverable, 60), sla: Math.max(60, Math.min(480, +t.sla || 180)), needApproval: !!t.needApproval, level: ['std', 'master', 'leader'].includes(t.level) ? t.level : 'master', link: clip(t.link, 40) }))
+  return c.json({ ok: true, model: eng(b, c.env), goal: clip(out.goal, 100), thesis: clip(out.thesis, 120), options, recommend: options.some((o: any) => o.key === out.recommend) ? out.recommend : options[0]?.key || 'A', why: clip(out.why, 160),
+    targets: (out.targets || []).slice(0, 6).map((x: any) => ({ kpi: clip(x.kpi, 30), base: clip(x.base, 40), target: clip(x.target, 40), basis: clip(x.basis, 120) })),
+    milestones: (out.milestones || []).slice(0, 6).map((x: any) => ({ when: clip(x.when, 20), what: clip(x.what, 60), owner: clip(x.owner, 20) })),
+    notdo: lines(out.notdo, 3, 80), tasks })
+})
+
+const FEAS_DIMS: [string, string, number][] = [['data', '数据支撑', 20], ['resource', '资源匹配', 15], ['finance', '财务可行', 15], ['timeline', '时间可行', 10], ['risk', '风险可控', 15], ['compliance', '合规安全', 10], ['landing', '落地路径', 15]]
+ai.post('/cmd/feasibility', async (c) => {
+  const b = await c.req.json<any>()
+  const st = b.strategy || {}
+  const plan = `核心判断：${clip(st.thesis, 120)}\n目标：${clip(st.goal, 100)}\n方案：\n${(st.options || []).map((o: any) => `${o.key}. ${o.name}：${o.idea}｜投入 ${o.invest}｜回报 ${o.return}｜风险 ${o.risk}｜周期 ${o.period}`).join('\n')}\n推荐：${st.recommend}（${clip(st.why, 120)}）\n量化目标：\n${(st.targets || []).map((t: any) => `- ${t.kpi}：${t.base} → ${t.target}（依据：${t.basis}）`).join('\n')}\n里程碑：${(st.milestones || []).map((m: any) => `${m.when} ${m.what}（${m.owner}）`).join('；')}\n部门任务：${(st.tasks || []).map((t: any) => `${t.title}→${t.deliverable}`).join('；')}`
+  const out = await llm(c.env,
+    '你是独立的投资委员会评审 + 运营落地专家，立场是「挑毛病」，不偏袒方案制定者。逐项检验方案的合理性与可落地性：目标是否超出研究给出的真实数据边界、关键假设是否成立、投入产出是否算得过来、企业资源能否支撑、时间是否现实、风险与合规是否有对冲、每个目标是否有明确的落地路径和责任部门。没有证据支撑的乐观数字必须指出。输出 JSON。',
+    `${cmdCtx(b)}\n\n【深度研究（真实数据边界）】\n${resText(b.research)}\n\n【待校验的发展规划（推荐方案 ${st.recommend}）】\n${plan}\n\n按 7 个维度打分（0-100）：data 数据支撑、resource 资源匹配、finance 财务可行、timeline 时间可行、risk 风险可控、compliance 合规安全、landing 落地路径。\n输出 JSON：{"dims":{"data":{"score":0,"note":"≤30字"},"resource":{...},"finance":{...},"timeline":{...},"risk":{...},"compliance":{...},"landing":{...}},"issues":[{"level":"high|mid|low","text":"问题，≤50字","fix":"修改建议，≤50字"}],"assumptions":["必须验证的关键假设，2-4 条"],"optionsView":[{"key":"A","score":0-100,"note":"≤30字"}],"summary":"结论，≤80字"}`,
+    { model: eng(b, c.env), effort: eff(b) })
+  const dims = FEAS_DIMS.map(([k, name, w]) => { const d = out.dims?.[k] || {}; return { k, name, w, score: Math.max(0, Math.min(100, Math.round(+d.score || 0))), note: clip(d.note, 60) } })
+  const total = Math.round(dims.reduce((s, d) => s + d.score * d.w, 0) / 100)
+  const issues = (out.issues || []).slice(0, 8).map((x: any) => ({ level: ['high', 'mid', 'low'].includes(x.level) ? x.level : 'mid', text: clip(x.text, 100), fix: clip(x.fix, 100) }))
+  const high = issues.filter((x: any) => x.level === 'high').length
+  const verdict = total >= 80 && !high ? 'go' : total >= 60 ? 'revise' : 'nogo'
+  return c.json({ ok: true, model: eng(b, c.env), dims, total, verdict, issues, assumptions: lines(out.assumptions, 4, 80), optionsView: (out.optionsView || []).slice(0, 3).map((o: any) => ({ key: clip(o.key, 2), score: Math.max(0, Math.min(100, Math.round(+o.score || 0))), note: clip(o.note, 60) })), summary: clip(out.summary, 160) })
 })
 
 // ---------- ⑥ 简历解析 ----------

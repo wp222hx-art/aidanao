@@ -136,9 +136,35 @@ window.CORE_TOOLS = [
   { k: 'package', name: '汇报材料', icon: 'fa-folder-open', gsk: 'llm_proxy', desc: '整理 Word / Excel / PPT 结构' },
   { k: 'slide', name: '创意幻灯片', icon: 'fa-image', gsk: 'image_generation', desc: 'GPT Image 2 / Nano Banana 2.1 生成 PPT 页' }
 ];
-window.ENGINE_LIST = [['gpt-5.5', 'GPT-5.5 Ultra'], ['claude-opus-5-5', 'Claude Opus 5.5 Ultra'], ['gpt-6.1-sol', 'GPT-6.1 Sol Ultra'], ['gpt-6-astra', 'GPT-6 Astra Ultra']];
-window.SLIDE_MODELS = [['gpt-image-2', 'GPT Image 2', '中文排版最清晰 · 约 30 积分/页'], ['nano-banana-2.1', 'Nano Banana 2.1', '创意插画更强 · 约 19 积分/页']];
-window.officeCfg = () => { S.office = Object.assign({ engine: 'gpt-5.5', slideModel: 'gpt-image-2', slides: 4 }, S.office || {}); return S.office; };
+window.ENGINE_LIST = [['gpt-5.5', 'GPT-5.5'], ['claude-opus-5-5', 'Claude Opus 5.5'], ['gpt-6.1-sol', 'GPT-6.1 Sol'], ['gpt-6-astra', 'GPT-6 Astra'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5'], ['claude-fable-5-1', 'Claude Fable 5.1']];
+window.SLIDE_MODELS = [['gpt-image-2', 'GPT Image 2', '中文排版最清晰 · 约 30 积分/页'], ['gpt-image-2.5', 'GPT Image 2.5', '最新高保真 · 约 30 积分/页'], ['nano-banana-2.1', 'Nano Banana 2.1', '创意插画更强 · 约 19 积分/页']];
+// 模型配置中心：按「角色」分配 Genspark 模型（列表由后端经 gsk CLI 同源接口实时读取）
+window.MODEL_ROLES = [
+  { k: 'research', name: '深度研究员', icon: 'fa-magnifying-glass-chart', desc: '拆解指令本质、设计检索、综合证据、划定真实数据边界', def: 'gpt-5.5', kind: 'llm' },
+  { k: 'strategy', name: '首席战略官', icon: 'fa-chess-queen', desc: '发展规划：3 套差异化创意方案 + 量化目标 + 部门任务', def: 'claude-opus-5-5', kind: 'llm' },
+  { k: 'feasibility', name: '可行性评审', icon: 'fa-scale-balanced', desc: '独立挑毛病：七维打分，判断是否可落地', def: 'gpt-5.5', kind: 'llm' },
+  { k: 'exec', name: '部门大师执行', icon: 'fa-user-tie', desc: '各部门大师：执行规划 + 成果撰写', def: 'gpt-5.5', kind: 'llm' },
+  { k: 'accept', name: '独立验收官', icon: 'fa-clipboard-check', desc: '逐条核对验收标准与边界', def: 'gpt-5.5', kind: 'llm' },
+  { k: 'slideDesign', name: '幻灯片设计师', icon: 'fa-pen-ruler', desc: '汇报结构、逐页观点、视觉隐喻与美术指导（专业思维）', def: 'claude-opus-5-5', kind: 'llm' },
+  { k: 'slideImage', name: '幻灯片出图', icon: 'fa-image', desc: '按设计稿逐页出图', def: 'gpt-image-2', kind: 'image' },
+  { k: 'review', name: '复盘 COO', icon: 'fa-arrow-trend-up', desc: '指令验收、复盘、老板决策见效评估', def: 'gpt-5.5', kind: 'llm' },
+  { k: 'persona', name: '大师生成', icon: 'fa-id-card', desc: '为各部门生成行业大师身份', def: 'gpt-5.5', kind: 'llm' }
+];
+window.modelCfg = () => {
+  const d = {}; MODEL_ROLES.forEach((r) => d[r.k] = r.def);
+  S.models = S.models || {};
+  S.models.roles = Object.assign(d, S.models.roles || {});
+  if (!S.models.effort) S.models.effort = 'high';
+  if (S.models.autoRevise === undefined) S.models.autoRevise = true;
+  return S.models;
+};
+window.roleModel = (k) => modelCfg().roles[k];
+window.modelName = (id) => String(id || '').replace(/^fal-ai\//, '').replace(/-/g, ' ').replace(/\b(gpt|claude|opus|sonnet|haiku|image|nano|banana|deep|seek|grok|kimi|glm|qwen|flux)\b/gi, (m) => m[0].toUpperCase() + m.slice(1)).replace(/^Gpt/, 'GPT');
+window.officeCfg = () => {
+  S.office = Object.assign({ slides: 4 }, S.office || {});
+  const r = modelCfg().roles; S.office.engine = r.exec; S.office.slideModel = r.slideImage;
+  return S.office;
+};
 window.toolMeta = (k) => TOOL_LIB.find((t) => t.k === k) || CORE_TOOLS.find((t) => t.k === k) || { name: k, icon: 'fa-gear' };
 window.autoTier = (s) => {
   const pos = s.pos || '';

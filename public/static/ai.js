@@ -8,6 +8,7 @@
   AI.call = async function (path, body, method = 'POST') {
     const headers = { 'Content-Type': 'application/json' };
     const code = localStorage.getItem('ebrain_code'); if (code) headers['X-Brain-Code'] = code;
+    if (method === 'POST' && body && !body.effort && window.modelCfg && S.models) body = { ...body, effort: modelCfg().effort };
     const r = await fetch('/api/ai' + path, { method, headers, body: method === 'POST' ? JSON.stringify(body || {}) : undefined });
     let j = null; try { j = await r.json(); } catch { }
     if (r.status === 401 && j?.needCode) {
