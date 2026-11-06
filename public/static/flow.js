@@ -51,6 +51,7 @@
   window.simTime = () => { const m = S.sim.min; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
   const stamp = () => `D${S.sim.day} ${simTime()}`;
   F.init = function () {
+    if (window.Masters) { Masters.ensureLocal(); setTimeout(() => Masters.generate(), 800); }
     if (S.sim && S.sim.ver === 3) return;
     const old = S.sim || {};
     S.sim = {
@@ -126,7 +127,7 @@
     if (c.presetPlan) { c.plan = c.presetPlan; c.goal = c.goal || c.text; return afterPlan(c, true); }
     if (c.real && isReal()) {
       try {
-        const r = await AI.call('/command', { ...ctxBase(), text: c.text, feedback: c.feedback, knowledge: knowledgeFor(null), depts: S.depts.map((d) => ({ id: d.id, name: d.name })) });
+        const r = await AI.call('/command', { ...ctxBase(), engine: officeCfg().engine, text: c.text, feedback: c.feedback, knowledge: knowledgeFor(null), depts: S.depts.map((d) => ({ id: d.id, name: d.name })) });
         if (!r.tasks?.length) throw new Error('未拆解出任务');
         c.goal = r.goal || c.text;
         c.plan = r.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null }));
@@ -190,7 +191,7 @@
   };
 
   // ====================== 执行表（痕迹） ======================
-  const STEP_N = { plan: '规划', tool: '调用工具', write: '撰写成果', accept: '独立验收', approve: '审批', deliver: '交付' };
+  const STEP_N = { plan: '规划', tool: '调用工具', write: '撰写成果', accept: '独立验收', package: '汇报材料', slide: '创意幻灯片', approve: '审批', deliver: '交付' };
   window.TRACE_STEP = STEP_N;
   const ownerOf = (t) => S.staff.find((x) => x.id === t.ownerId);
   function trace(t, step, o = {}) {
@@ -203,9 +204,9 @@
   function traceOk(t, e, o = {}) { Object.assign(e, { status: 'ok' }, o); logTrace(t, e); refresh(); }
   function traceFail(t, e, msg) { e.status = 'fail'; e.detail = msg; refresh(); }
   function logTrace(t, e) {
-    if (!['tool', 'accept', 'plan'].includes(e.step)) return;
+    if (!['tool', 'accept', 'plan', 'package'].includes(e.step)) return;
     const o = ownerOf(t), who = `${esc(o?.name || deptOf(t.deptId)?.name || '')}<span class="tz">${TIERS[t.tier]?.short || ''}</span>`;
-    const what = e.step === 'tool' ? `调用「${toolMeta(e.tool).name}」` : e.step === 'plan' ? '完成执行规划' : '独立验收';
+    const what = e.step === 'tool' ? `调用「${toolMeta(e.tool).name}」` : e.step === 'plan' ? '完成执行规划' : e.step === 'package' ? '编排汇报材料' : '独立验收';
     log(t.cmdId, 'trace', `🔧 ${who} ${what}：${esc(String(e.detail || '').slice(0, 60))}`, e.step === 'accept' ? (t.accept?.pass ? '#059669' : '#d97706') : '#0284c7');
   }
   F.trace = trace;
@@ -232,7 +233,7 @@
       if (c.stage === 'accept' && c.acceptDue && S.sim.min >= c.acceptDue) improve(c, localReview(c));
     });
     S.sim.tasks.forEach((t) => {
-      if (['done', 'approval', 'review', 'rejected'].includes(t.status)) return;
+      if (['done', 'approval', 'review', 'rejected', 'pack'].includes(t.status)) return;
       t.age += step;
       if (t.real) return;
       const a = agentOf(t.agentId);
@@ -270,13 +271,14 @@
     t.status = 'exec'; t.stuck = false; t.error = ''; t.trace = t.trace || [];
     if (a) a.status = 'busy';
     say(t.agentId, wasRework ? '按验收意见返工…' : `${T.short}级执行中…`, 'ai');
-    const base = { ...ctxBase(), goal: c?.goal || '', dept: d?.name, pos: o?.pos || '', owner: o?.name || '', agent: a?.name, task: t.title, deliverable: t.deliverable, tier: t.tier, tools: t.tools, knowledge: knowledgeFor(t.deptId) };
+    const base = { ...ctxBase(), ...masterOf(t), goal: c?.goal || '', dept: d?.name, pos: o?.pos || '', owner: o?.name || '', agent: a?.name, task: t.title, deliverable: t.deliverable, tier: t.tier, tools: t.tools, knowledge: knowledgeFor(t.deptId) };
+    const P = window.Masters?.get(t.deptId); if (P && !wasRework && !t.trace.length) say(t.agentId, `${P.title}「${P.name}」接手`, 'ai');
     let cur = null;
     try {
       // ① 规划：验收标准 + 工具组合
       if (!t.plan) {
         t.step = 'plan'; t.progress = 6;
-        cur = trace(t, 'plan', { status: 'run', title: `${T.name}规划`, detail: `${T.model} 拆解验收标准与工具调用` });
+        cur = trace(t, 'plan', { status: 'run', title: `${T.name}规划`, detail: `${P ? P.title + '「' + P.name + '」' : ''}以 ${engName()} 拆解验收标准与工具调用` });
         const p = await AI.call('/task/plan', base);
         if (t.status === 'rejected') return;
         t.plan = p; t.criteria = p.criteria;
@@ -310,7 +312,7 @@
       }
       // ③ 撰写成果
       t.step = 'write'; t.progress = Math.max(t.progress, 55);
-      cur = trace(t, 'write', { status: 'run', detail: `${T.model} 基于 ${t.evidence.length} 条证据${wasRework ? '按验收意见修订' : '撰写'}` });
+      cur = trace(t, 'write', { status: 'run', detail: `${engName()} 基于 ${t.evidence.length} 条证据${wasRework ? '按验收意见修订' : '撰写'}` });
       const anim = setInterval(() => { if (t.step === 'write' && t.progress < 85) t.progress++; }, 2500);
       let r; try { r = await AI.call('/task/produce', { ...base, framework: t.plan.framework, outline: t.plan.outline, criteria: t.criteria, evidence: t.evidence, images: t.images, feedback: wasRework ? t.feedback : '', previous: wasRework ? t.output : '' }); } finally { clearInterval(anim); }
       if (t.status === 'rejected') return;
@@ -362,9 +364,8 @@
     if (pass) {
       log(t.cmdId, 'verify', `✅ 校验通过「${short(t.title)}」${r.total} 分 · ${esc(t.feedback.slice(0, 40))}`, '#059669');
       fx('qa', t.deptId, `通过 ${r.total}`, '#059669');
-      if (t.needApproval) toApproval(t, 'risk');
-      else if (a?.level === 'L1') toApproval(t, 'l1');
-      else deliver(t);
+      const route = () => { if (t.status === 'rejected') return; if (t.needApproval) toApproval(t, 'risk'); else if (a?.level === 'L1') toApproval(t, 'l1'); else deliver(t); saveState(); refresh(); };
+      makePack(t, route);
     } else if (t.rework < limit) {
       t.rework++; t.status = 'rework'; t.progress = 30; S.sim.metrics.rework++; if (a) a.fail++;
       if (t.real) S.sim.real.rework++;
@@ -378,6 +379,55 @@
     }
     saveState(); refresh();
   }
+  // ====================== ⑥½ 汇报材料：Word + Excel + 创意 PPT ======================
+  const engName = () => (ENGINE_LIST.find((x) => x[0] === officeCfg().engine) || [, 'Ultra'])[1];
+  const slmName = (k) => (SLIDE_MODELS.find((x) => x[0] === k) || [, k])[1];
+  function masterOf(t) { return window.Masters ? Masters.payload(t.deptId) : { engine: officeCfg().engine }; }
+  function fallbackPack(t, why) {
+    const d = deptOf(t.deptId), its = t.accept?.items || [];
+    const plain = String(t.output || '').replace(/[#>*`|\[\]]/g, '').replace(/\s+/g, ' ').trim();
+    return { fallback: true, at: stamp(), slideModel: officeCfg().slideModel, why,
+      doc: { title: t.title, subtitle: `${d?.name || ''} · 部门汇报`, summary: plain.slice(0, 160) },
+      sheets: its.length ? [{ name: '验收对照', title: '验收标准达成情况', columns: ['序号', '验收标准', '结果', '验收证据'], rows: its.map((x, i) => [i + 1, x.text, { met: '达标', partial: '部分达标', miss: '未达标' }[x.status] || x.status, x.evidence || '']), note: '来自独立验收' }] : [],
+      slides: [{ layout: 'cover', title: t.title.slice(0, 14), subtitle: `${d?.name || ''} · 部门汇报`, points: [], speaker: plain.slice(0, 150) }, { layout: 'close', title: '验收结论', points: its.slice(0, 3).map((x) => x.text.slice(0, 14)), speaker: t.accept?.feedback || '' }] };
+  }
+  // 验收通过后：首席大师把成果编排成三件套，再用 GPT Image 2 / Nano Banana 2.1 逐页生成创意幻灯片
+  async function makePack(t, then, keep) {
+    if (!keep) { t.status = 'pack'; t.step = 'package'; }
+    const d = deptOf(t.deptId), cfg = officeCfg(), P = window.Masters?.get(t.deptId);
+    if (!t.real || !isReal()) {
+      t.pack = Office.simPack(t);
+      trace(t, 'package', { detail: `（仿真）Word 1 份 · Excel ${t.pack.sheets.length} 张表 · PPT ${t.pack.slides.length} 页（文字版）`, sim: true });
+      fx(t.deptId, 'brain', '汇报材料', '#ea580c');
+      return then && then();
+    }
+    let cur = trace(t, 'package', { status: 'run', detail: `${P ? P.title + '「' + P.name + '」' : ''}以 ${engName()} 编排 Word / Excel / ${cfg.slides} 页 PPT` });
+    say(t.agentId, '整理汇报材料…', 'ai');
+    try {
+      const r = await AI.call('/task/package', { ...ctxBase(), ...masterOf(t), dept: d?.name, task: t.title, deliverable: t.deliverable, criteria: t.criteria, output: t.output, slides: cfg.slides });
+      t.pack = { doc: r.doc, sheets: r.sheets || [], slides: (r.slides || []).map((s) => ({ ...s, pending: true })), slideModel: cfg.slideModel, engine: r.model, at: stamp() };
+      traceOk(t, cur, { detail: `Word「${r.doc?.title || t.title}」· Excel ${t.pack.sheets.length} 张表 · PPT ${t.pack.slides.length} 页设计`, model: engName(), ms: Date.now() - cur.ts });
+    } catch (e) { traceFail(t, cur, e.message); t.pack = fallbackPack(t, e.message); log(t.cmdId, 'esc', `⚠️ 「${short(t.title)}」汇报材料编排失败（${esc(e.message)}），使用基础版`, '#dc2626'); }
+    if (t.status === 'rejected') return;
+    refresh();
+    // 并行生成幻灯片（失败的页自动回退为文字版式）
+    let credits = 0;
+    await Promise.all(t.pack.slides.map(async (s, i) => {
+      const e = trace(t, 'slide', { status: 'run', tool: 'slide', detail: `${slmName(cfg.slideModel)} 生成第 ${i + 1} 页「${s.title}」` });
+      try { const r = await AI.call('/task/slide', { model: cfg.slideModel, slide: s, index: i, company: S.company.name, dept: d?.name, color: d?.color }); s.url = r.url; credits += +r.credits || 0; traceOk(t, e, { detail: `第 ${i + 1} 页「${s.title}」已生成`, model: slmName(r.model), images: [{ url: r.url }], ms: Date.now() - e.ts }); }
+      catch (err) { traceFail(t, e, err.message); }
+      finally { s.pending = false; refresh(); }
+    }));
+    t.pack.credits = credits;
+    const ok = t.pack.slides.filter((s) => s.url).length;
+    log(t.cmdId, 'trace', `🎞️ ${esc(d?.name || '')} 汇报材料就绪：Word + Excel ${t.pack.sheets.length} 表 + PPT ${ok}/${t.pack.slides.length} 页（${slmName(cfg.slideModel)}）· <a class="lnk" onclick="openReport('${t.id}')">查看汇报</a>`, '#ea580c');
+    fx(t.deptId, 'brain', '汇报材料', '#ea580c');
+    saveState();
+    then && then();
+  }
+  F.makePack = makePack;
+  // 页面刷新时中断的「出汇报材料」任务：自动续跑
+  setTimeout(() => { (S.sim?.tasks || []).filter((t) => t.status === 'pack').forEach((t) => { const a = agentOf(t.agentId); makePack(t, () => { if (t.status === 'rejected') return; if (t.needApproval) toApproval(t, 'risk'); else if (a?.level === 'L1') toApproval(t, 'l1'); else deliver(t); saveState(); refresh(); }); }); }, 2500);
   function toApproval(t, why) {
     t.status = 'approval';
     const action = why === 'l1' ? '建议级 Agent 成果确认' : (/报价|签约|合同/.test(t.title) ? '报价/签约' : /投放|预算|广告/.test(t.title) ? '追加预算/投放' : /发布|宣传|海报|视频|群发/.test(t.title) ? '对外发布' : '高风险动作执行');
@@ -389,6 +439,8 @@
     const c = cmdOf(t.cmdId), a = agentOf(t.agentId), d = deptOf(t.deptId);
     t.status = 'done'; t.doneAt = stamp(); t.progress = 100;
     S.sim.metrics.done++; S.sim.today.done++;
+    // 人工通过/复核通过的任务也补齐汇报材料（后台生成，完成后刷新档案）
+    if (!t.pack && t.output) makePack(t, () => { const cc = cmdOf(t.cmdId); if (cc?.archiveId && window.Archive) Archive.add(cc); saveState(); refresh(); }, true);
     const hrs = rand(1, 4); S.sim.metrics.hours += hrs; S.sim.today.hours += hrs;
     if (t.real) S.sim.real.done++;
     if (a) { a.done++; a.status = 'idle'; }
@@ -519,7 +571,7 @@
     if (c.real && isReal()) {
       let rv = null;
       try {
-        rv = await AI.call('/review', { ...ctxBase(), text: c.text, goal: c.goal, depts: S.depts.map((d) => d.name), results: ts.map((t) => ({ dept: deptOf(t.deptId)?.name, title: t.title, score: t.evals?.total || 0, rework: t.rework, human: !!t.humanPassed, output: String(t.output || '').slice(0, 700) })) });
+        rv = await AI.call('/review', { ...ctxBase(), engine: officeCfg().engine, text: c.text, goal: c.goal, depts: S.depts.map((d) => d.name), results: ts.map((t) => ({ dept: deptOf(t.deptId)?.name, title: t.title, score: t.evals?.total || 0, rework: t.rework, human: !!t.humanPassed, output: String(t.output || '').slice(0, 700) })) });
       } catch (e) { log(c.id, 'accept', `⚠️ AI 验收失败（${esc(e.message)}），使用规则验收`, '#dc2626'); }
       if (c.stage !== 'accept') return;
       improve(c, rv || localReview(c));
@@ -559,6 +611,8 @@
     log(c.id, 'improve', `📈 #${c.no} 复盘提升：验收 <b>${c.acceptance.score}</b> 分（${vl}）· 沉淀经验 ${ls.length} 条${promos.length ? ' · ' + esc(promos.join('、')) : ''} · <a class="lnk" onclick="openCmdModal('${c.id}')">查看复盘</a>`, '#7c3aed');
     fx('brain', 'kb', '经验沉淀', '#7c3aed'); setTimeout(() => fx('kb', 'brain', '知识注入', '#7c3aed'), 1500);
     c.stage = 'done'; c.doneAt = stamp();
+    // 及时归档：各部门 Word / Excel / PPT + 执行表 + 验收 + 复盘
+    if (window.Archive) { const rec = Archive.add(c); log(c.id, 'archive', `🗂️ #${c.no} 已归档：${rec.stats.depts} 个部门 · ${rec.stats.docs} 份文档 · ${rec.stats.slides} 页幻灯片 · <a class="lnk" onclick="gotoView('archive')">查看项目档案</a>`, '#0f766e'); }
     saveState(); refresh();
   }
 

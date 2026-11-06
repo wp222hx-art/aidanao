@@ -25,6 +25,7 @@
       AI.on = !!r.connected; AI.user = r.user || null; AI.model = r.model || ''; AI.reason = r.reason || '';
     } catch (e) { AI.on = false; AI.reason = '无法连接 AI 服务'; }
     renderPill();
+    if (AI.on && S.launched && window.Masters && S.depts?.length) Masters.generate();
   };
 
   // ---------- 连接状态胶囊 ----------

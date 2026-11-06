@@ -113,11 +113,11 @@ window.SKILL_DICT = ['Excel', 'PPT', '数据分析', 'Python', 'SQL', '财务', 
 
 // ================= 岗位能力分级 × Genspark 决策调用库 =================
 window.TIERS = {
-  std: { k: 'std', name: '一般级', short: '一般', icon: 'fa-user', color: '#64748b', bg: '#f1f5f9', model: 'gpt-5.4-mini', calls: 1, pass: 78, tools: ['search'],
-    desc: '清单式执行：信息整理、标准动作，输出可直接照做的步骤表' },
-  master: { k: 'master', name: '大师级', short: '大师', icon: 'fa-user-graduate', color: '#2563eb', bg: '#eff6ff', model: 'gpt-5.4', calls: 3, pass: 82, tools: ['search', 'batch', 'crawl', 'imgsearch'],
-    desc: '方法论驱动：显式框架 + 数据测算表 + 双方案取舍，证据深读' },
-  leader: { k: 'leader', name: '超级领袖级', short: '领袖', icon: 'fa-crown', color: '#c2410c', bg: '#fff7ed', model: 'gpt-5.5', calls: 5, pass: 85, tools: ['search', 'batch', 'crawl', 'imgsearch', 'image', 'doc'],
+  std: { k: 'std', name: '一般级', short: '一般', icon: 'fa-user', color: '#64748b', bg: '#f1f5f9', model: 'Ultra 推理', calls: 2, pass: 80, tools: ['search', 'crawl'],
+    desc: '执行级：可直接照做的步骤表 + 执行清单表，信息准确完整' },
+  master: { k: 'master', name: '大师级', short: '大师', icon: 'fa-user-graduate', color: '#2563eb', bg: '#eff6ff', model: 'Ultra 推理', calls: 3, pass: 83, tools: ['search', 'batch', 'crawl', 'imgsearch'],
+    desc: '方法论驱动：显式框架 + 2 张测算/对比表 + 双方案取舍，证据深读' },
+  leader: { k: 'leader', name: '超级领袖级', short: '领袖', icon: 'fa-crown', color: '#c2410c', bg: '#fff7ed', model: 'Ultra 推理', calls: 5, pass: 86, tools: ['search', 'batch', 'crawl', 'imgsearch', 'image', 'doc'],
     desc: '战略决策：SCQA、三方案对比、ROI 测算、风险矩阵、30/60/90 天里程碑' }
 };
 window.TIER_ORDER = ['std', 'master', 'leader'];
@@ -132,8 +132,13 @@ window.TOOL_LIB = [
 window.CORE_TOOLS = [
   { k: 'plan', name: '执行规划', icon: 'fa-list-check', gsk: 'llm_proxy', desc: '拆出验收标准与工具调用计划' },
   { k: 'write', name: '成果撰写', icon: 'fa-pen-nib', gsk: 'llm_proxy', desc: '按级别模型撰写，引用证据 [n]' },
-  { k: 'accept', name: '独立验收', icon: 'fa-clipboard-check', gsk: 'llm_proxy', desc: '逐条核对验收标准，引用原文' }
+  { k: 'accept', name: '独立验收', icon: 'fa-clipboard-check', gsk: 'llm_proxy', desc: '逐条核对验收标准，引用原文' },
+  { k: 'package', name: '汇报材料', icon: 'fa-folder-open', gsk: 'llm_proxy', desc: '整理 Word / Excel / PPT 结构' },
+  { k: 'slide', name: '创意幻灯片', icon: 'fa-image', gsk: 'image_generation', desc: 'GPT Image 2 / Nano Banana 2.1 生成 PPT 页' }
 ];
+window.ENGINE_LIST = [['gpt-5.5', 'GPT-5.5 Ultra'], ['claude-opus-5-5', 'Claude Opus 5.5 Ultra'], ['gpt-6.1-sol', 'GPT-6.1 Sol Ultra'], ['gpt-6-astra', 'GPT-6 Astra Ultra']];
+window.SLIDE_MODELS = [['gpt-image-2', 'GPT Image 2', '中文排版最清晰 · 约 30 积分/页'], ['nano-banana-2.1', 'Nano Banana 2.1', '创意插画更强 · 约 19 积分/页']];
+window.officeCfg = () => { S.office = Object.assign({ engine: 'gpt-5.5', slideModel: 'gpt-image-2', slides: 4 }, S.office || {}); return S.office; };
 window.toolMeta = (k) => TOOL_LIB.find((t) => t.k === k) || CORE_TOOLS.find((t) => t.k === k) || { name: k, icon: 'fa-gear' };
 window.autoTier = (s) => {
   const pos = s.pos || '';

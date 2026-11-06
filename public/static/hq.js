@@ -4,7 +4,7 @@
   let timer = null, view = 'flow', isoCtx = null, logScope = 'focus', boardSig = '', sideSig = '';
   const deptOf = (id) => S.depts.find((d) => d.id === id);
   const short = (s, n = 16) => esc(String(s || '').slice(0, n)) + (String(s || '').length > n ? '…' : '');
-  const ST = { queued: ['待执行', 'p'], exec: ['执行中', ''], rework: ['返工中', 'warn'], verify: ['校验中', 'warn'], approval: ['待审批', 'warn'], review: ['人工复核', 'bad'], done: ['已交付', 'ok'], rejected: ['已取消', 'bad'] };
+  const ST = { queued: ['待执行', 'p'], exec: ['执行中', ''], rework: ['返工中', 'warn'], verify: ['校验中', 'warn'], pack: ['出汇报材料', ''], approval: ['待审批', 'warn'], review: ['人工复核', 'bad'], done: ['已交付', 'ok'], rejected: ['已取消', 'bad'] };
   window.TASK_ST = ST;
   const CMD_ST = { plan: '拆解中', confirm: '待老板确认方案', accept: '指令验收中', improve: '复盘提升中', done: '已完成', cancelled: '已取消' };
 
@@ -35,7 +35,9 @@
     { k: 'cockpit', i: 'fa-gauge-high', n: '经营驾驶舱' },
     { k: 'studio', i: 'fa-clapperboard', n: '内容工厂' },
     { k: 'ledger', i: 'fa-sack-dollar', n: '价值账本' },
-    { k: 'org', i: 'fa-sitemap', n: '组织人才' }
+    { k: 'org', i: 'fa-sitemap', n: '组织人才' },
+    { k: 'masters', i: 'fa-user-tie', n: '大师智库' },
+    { k: 'archive', i: 'fa-box-archive', n: '项目档案' }
   ];
   const QUICK = ['本月全网找一批新订单', '降低主要原料采购成本', '做一波品牌宣传', '催收逾期应收账款', '招聘两名销售骨干'];
   window.renderHQ = function () {
@@ -180,11 +182,13 @@
   }
 
   // ====================== 调度中枢：老板指令 → 执行表 ======================
-  const STEPS6 = [['plan', '规划', 'fa-list-check'], ['tool', '调用工具', 'fa-toolbox'], ['write', '撰写', 'fa-pen-nib'], ['accept', '验收', 'fa-clipboard-check'], ['approve', '审批', 'fa-stamp'], ['deliver', '交付', 'fa-box-open']];
+  const STEPS6 = [['plan', '规划', 'fa-list-check'], ['tool', '调用工具', 'fa-toolbox'], ['write', '撰写', 'fa-pen-nib'], ['accept', '验收', 'fa-clipboard-check'], ['package', '汇报材料', 'fa-file-powerpoint'], ['approve', '审批', 'fa-stamp'], ['deliver', '交付', 'fa-box-open']];
   const ownerOf = (t) => S.staff.find((s) => s.id === t.ownerId);
   function stepIdx(t) {
-    if (t.status === 'done') return 6;
-    if (t.status === 'approval' || t.status === 'review') return 4;
+    if (t.status === 'done') return 7;
+    if (t.status === 'approval') return 5;
+    if (t.status === 'review') return 3;
+    if (t.status === 'pack') return 4;
     if (t.status === 'verify') return 3;
     if (t.status === 'queued' || t.status === 'rejected') return -1;
     if (t.step) return Math.max(0, STEPS6.findIndex((s) => s[0] === t.step));
@@ -213,6 +217,18 @@
     const ok = a.pass ?? (a.total >= (a.threshold || 80));
     return `<span class="acc ${ok ? 'ok' : 'no'}"><b>${a.total}</b><small>/${a.threshold || 80}</small><span class="dots3">${(a.items || []).map((x) => `<i class="${x.status}"></i>`).join('')}</span></span>`;
   }
+  // 汇报材料：Word / Excel / PPT 三个按钮（生成中显示进度）
+  function docCell(t) {
+    const P = t.pack;
+    if (!P) return t.status === 'pack' ? '<span class="acc run"><i class="fas fa-spinner fa-spin"></i> 编排中</span>' : '<span class="dim">—</span>';
+    const n = (P.slides || []).length, ok = (P.slides || []).filter((s) => s.url).length, pend = (P.slides || []).some((s) => s.pending);
+    return `<span class="doc3"><button data-rv="${t.id}" data-tab="doc" class="w" title="Word 文档"><i class="fas fa-file-word"></i></button><button data-rv="${t.id}" data-tab="xls" class="x" title="Excel 表格"><i class="fas fa-file-excel"></i></button><button data-rv="${t.id}" data-tab="ppt" class="p" title="创意 PPT"><i class="fas fa-file-powerpoint"></i></button></span><small class="doc-n">${pend ? `<i class="fas fa-spinner fa-spin"></i> 幻灯片 ${ok}/${n}` : P.sim ? `${n} 页 · 仿真` : `${ok || n} 页${ok ? ' · AI 绘制' : ''}`}</small>`;
+  }
+  window.briefCmd = function (id) {
+    const c = Flow.cmd(id); if (!c) return;
+    const g = c.taskIds.map(Flow.task).filter((t) => t && t.pack).map((t) => ({ r: Office.snap(t), slides: t.pack.slides }));
+    openBriefing(g);
+  };
   function stageCount(k) {
     const T = S.sim.tasks, C = S.sim.commands;
     return { plan: C.filter((c) => c.stage === 'plan').length, confirm: S.sim.approvals.filter((a) => a.kind === 'plan' && a.status === 'pending').length, dispatch: T.filter((t) => t.status === 'queued').length, exec: T.filter((t) => t.status === 'exec' || t.status === 'rework').length, verify: T.filter((t) => t.status === 'verify').length, approve: T.filter((t) => t.status === 'approval' || t.status === 'review').length, deliver: T.filter((t) => t.status === 'done' && t.day === S.sim.day).length, improve: C.filter((c) => c.stage === 'accept' || c.stage === 'improve').length }[k];
@@ -220,6 +236,8 @@
   function renderBoard(main) {
     main.innerHTML = `<section class="cc" id="cc"><div class="cc-pipe" id="cc-pipe"></div><div class="cc-body" id="cc-body"></div></section>`;
     $('#cc').onclick = (e) => {
+      const rv = e.target.closest('[data-rv]'); if (rv) { e.stopPropagation(); return openReport(rv.dataset.rv, rv.dataset.tab); }
+      const bf = e.target.closest('[data-brief]'); if (bf) { e.stopPropagation(); return briefCmd(bf.dataset.brief); }
       const r = e.target.closest('[data-t]'); if (r) return openTaskModal(r.dataset.t);
       const o = e.target.closest('[data-owner]'); if (o) { e.stopPropagation(); return openStaffModal(o.dataset.owner); }
       const c = e.target.closest('[data-cmd]'); if (c) return openCmdModal(c.dataset.cmd);
@@ -230,7 +248,7 @@
     updateBoard(true);
   }
   function boardSignature() {
-    return [S.sim.commands.map((c) => c.id + c.stage + c.taskIds.length).join(), S.sim.tasks.map((t) => t.id + t.status + (t.step || '') + (t.trace?.length || 0) + (t.trace?.filter((e) => e.status === 'run').length || 0) + t.esc + (t.paused ? 'p' : '') + t.rework + (t.accept?.total || '')).join(), S.sim.approvals.filter((a) => a.status === 'pending').length, Flow.focus, S.staff.map((s) => s.tier || '').join(''), S.agents.map((a) => a.status[0]).join('')].join('|');
+    return [S.sim.commands.map((c) => c.id + c.stage + c.taskIds.length).join(), S.sim.tasks.map((t) => t.id + t.status + (t.step || '') + (t.trace?.length || 0) + (t.trace?.filter((e) => e.status === 'run').length || 0) + t.esc + (t.paused ? 'p' : '') + t.rework + (t.accept?.total || '') + (t.pack ? 'k' + (t.pack.slides || []).filter((s) => s.url || !s.pending).length : '')).join(), Object.values(S.masters || {}).map((m) => m.name).join(), S.sim.approvals.filter((a) => a.status === 'pending').length, Flow.focus, S.staff.map((s) => s.tier || '').join(''), S.agents.map((a) => a.status[0]).join('')].join('|');
   }
   function updateBoard(force) {
     const body = $('#cc-body'); if (!body) return;
@@ -263,17 +281,18 @@
     const rows = (ts.length ? ts : []).map((t) => {
       const d = deptOf(t.deptId), o = ownerOf(t), stt = ST[t.status] || ['—', 'p'];
       return `<tr class="exec-row rs-${t.status}" data-t="${t.id}" data-row-dept="${t.deptId}">
-        <td><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span></td>
+        <td><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span>${window.Masters ? Masters.card(t.deptId, true) : ''}</td>
         <td class="tk"><b>${esc(t.title)}</b><small>${esc(t.deliverable || '')}</small></td>
         <td>${o ? `<span class="own" data-owner="${o.id}"><span class="avatar xs" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>${esc(o.pos || '')}</small></span></span>` : '<span class="dim">未配置人员</span>'}</td>
         <td>${tierBadge(t.tier, true)}${t.gap ? `<span class="gap" title="任务要求${TIERS[t.level].name}，部门无对应人员">需${TIERS[t.level].short}</span>` : ''}</td>
         <td><div class="tl-row">${toolChips(t)}</div></td>
         <td><div class="s6-row">${stepCells(t)}</div>${['exec', 'rework'].includes(t.status) ? `<div class="pg"><i style="width:${t.progress}%"></i></div>` : ''}</td>
         <td>${acceptCell(t)}</td>
+        <td>${docCell(t)}</td>
         <td><span class="tag ${stt[1]}">${stt[0]}</span>${t.rework ? `<span class="tag warn">v${t.history.length + (t.status === 'rework' ? 1 : 0)}</span>` : ''}${t.esc ? `<span class="tag bad">督办L${t.esc}</span>` : ''}${t.paused ? '<span class="tag bad">暂停</span>' : ''}</td>
       </tr>`;
     }).join('');
-    const planRows = !ts.length && c.plan.length ? c.plan.map((p) => { const d = deptOf(p.deptId), o = Flow.pickOwner(p.deptId, p.level); const tr = o ? tierOf(o) : (p.level || 'master'); return `<tr class="exec-row plan"><td><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span></td><td class="tk"><b>${esc(p.title)}</b><small>${esc(p.deliverable || '')}</small></td><td>${o ? `<span class="own"><span class="avatar xs" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>拟定负责人</small></span></span>` : '—'}</td><td>${tierBadge(tr, true)}</td><td><div class="tl-row">${TIERS[tr].tools.map((x) => `<span class="tl" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span>`).join('')}</div></td><td colspan="3" class="dim">${p.needApproval ? '<span class="tag warn">高风险 · 需审批</span> ' : ''}待确认分发</td></tr>`; }).join('') : '';
+    const planRows = !ts.length && c.plan.length ? c.plan.map((p) => { const d = deptOf(p.deptId), o = Flow.pickOwner(p.deptId, p.level); const tr = o ? tierOf(o) : (p.level || 'master'); return `<tr class="exec-row plan"><td><span class="dpt" style="--dc:${d?.color}"><i class="fas ${d?.icon}"></i>${esc(d?.name || '')}</span></td><td class="tk"><b>${esc(p.title)}</b><small>${esc(p.deliverable || '')}</small></td><td>${o ? `<span class="own"><span class="avatar xs" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>拟定负责人</small></span></span>` : '—'}</td><td>${tierBadge(tr, true)}</td><td><div class="tl-row">${TIERS[tr].tools.map((x) => `<span class="tl" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span>`).join('')}</div></td><td colspan="4" class="dim">${p.needApproval ? '<span class="tag warn">高风险 · 需审批</span> ' : ''}待确认分发</td></tr>`; }).join('') : '';
     return `<article class="cmd-panel ${open ? 'open' : ''} ${c.stage}" style="--cc:${c.color}">
       <header class="cp-hd" data-fold="${c.id}">
         <span class="cno-big">#${c.no}</span>
@@ -283,7 +302,8 @@
         <i class="fas fa-chevron-down fold"></i>
       </header>
       ${open ? `${steps}${hint}
-      ${ts.length || planRows ? `<table class="exec-table"><thead><tr><th>部门</th><th>任务 / 交付物</th><th>负责人</th><th>能力级别</th><th>调用工具组合</th><th>执行步骤</th><th>验收</th><th>状态</th></tr></thead><tbody>${rows || planRows}</tbody></table>` : ''}
+      ${ts.length || planRows ? `<table class="exec-table"><thead><tr><th>部门</th><th>任务 / 交付物</th><th>负责人</th><th>能力级别</th><th>调用工具组合</th><th>执行步骤</th><th>验收</th><th>汇报材料</th><th>状态</th></tr></thead><tbody>${rows || planRows}</tbody></table>` : ''}
+      ${ts.some((t) => t.pack) ? `<div class="cp-brief"><i class="fas fa-person-chalkboard"></i> 已有 <b>${ts.filter((t) => t.pack).length}</b> 个部门交出汇报材料（Word + Excel + 创意 PPT）<button class="btn btn-pri btn-sm" data-brief="${c.id}"><i class="fas fa-play"></i>召开部门汇报会</button>${c.archiveId ? `<button class="btn btn-ghost btn-sm" data-gate="archive"><i class="fas fa-box-archive"></i>已归档 · 查看档案</button>` : ''}</div>` : ''}
       ${c.acceptance ? `<div class="cp-acc"><i class="fas fa-clipboard-check"></i> 指令验收 <b>${c.acceptance.score}</b> 分 · ${{ achieved: '目标达成', partial: '部分达成', failed: '未达成' }[c.acceptance.verdict] || ''} · ${esc(c.acceptance.summary || '')}</div>` : ''}` : `<div class="cp-mini">${steps}</div>`}
     </article>`;
   }
@@ -355,12 +375,16 @@
     const d = deptOf(t.deptId), a = agentOf(t.agentId), c = Flow.cmd(t.cmdId), o = ownerOf(t), ac = t.accept, ev = t.evals?.ev, T = TIERS[t.tier] || TIERS.std;
     const ai = window.AI && AI.on;
     const crit = (t.criteria || []).map((x, i) => { const it = ac?.items?.[i]; return `<li class="${it ? 'ai-' + it.status : ''}"><i class="fas ${!it ? 'fa-circle dim' : it.status === 'met' ? 'fa-circle-check' : it.status === 'partial' ? 'fa-circle-half-stroke' : 'fa-circle-xmark'}"></i><span>${esc(x)}${it?.evidence ? `<small>验收证据：「${esc(it.evidence)}」${esc(it.note || '')}</small>` : ''}</span></li>`; }).join('');
+    const MP = window.Masters?.get(t.deptId), pk = t.pack;
+    const masterCard = MP ? `<div class="card mt ms-mini" style="--dc:${d?.color}"><div class="ms-id"><div class="ms-av">${esc(MP.name[0])}</div><div><b>${esc(MP.title)}「${esc(MP.name)}」</b><div class="dim" style="font-size:12px">${esc(MP.motto || '')} · 以 ${esc((ENGINE_LIST.find((x) => x[0] === officeCfg().engine) || [, 'Ultra'])[1])} 深度推理</div></div><button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeOverlay();gotoView('masters')"><i class="fas fa-sliders"></i>调整思维与边界</button></div><div class="ms-row"><div><h5>思维方式</h5><ol>${(MP.thinking || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div><div><h5>边界</h5><ul class="bd">${(MP.boundaries || []).concat(window.Masters.cfg().rules || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div></div>` : '';
+    const packCard = pk ? `<div class="card mt pack-card"><div class="ct"><span class="h3"><i class="fas fa-folder-open" style="color:#ea580c"></i> 部门汇报材料</span><span class="dim" style="font-size:12px">${pk.sim ? '仿真 · 文字版' : `${esc((SLIDE_MODELS.find((x) => x[0] === pk.slideModel) || [, ''])[1])} 绘制幻灯片${pk.credits ? ` · 约 ${pk.credits} 积分` : ''}`}</span></div><div class="pack-row"><button class="pk w" data-rv="${t.id}" data-tab="doc"><i class="fas fa-file-word"></i><b>Word 文档</b><small>${esc(pk.doc?.title || t.title)}</small></button><button class="pk x" data-rv="${t.id}" data-tab="xls"><i class="fas fa-file-excel"></i><b>Excel 表格</b><small>${(pk.sheets || []).length + 1} 张工作表</small></button><button class="pk p" data-rv="${t.id}" data-tab="ppt"><i class="fas fa-file-powerpoint"></i><b>创意 PPT</b><small>${(pk.slides || []).length} 页${(pk.slides || []).some((s) => s.pending) ? ' · 生成中' : ''}</small></button><div class="pk-thumbs">${(pk.slides || []).slice(0, 4).map((s) => `<span>${Office.slideHTML(s, { color: d?.color })}</span>`).join('')}</div></div></div>` : (t.status === 'pack' ? '<div class="card mt"><i class="fas fa-spinner fa-spin" style="color:#ea580c"></i> 验收已通过，首席大师正在编排 Word / Excel / 创意 PPT…</div>' : '');
     return `<div class="flex"><div class="bot-ic"><i class="fas fa-file-signature"></i></div><div style="min-width:0;flex:1"><div class="h2" style="font-size:17px">${esc(t.title)}</div><div class="hint">${esc(d?.name || '')} · <span class="tag ${ST[t.status][1]}" style="font-size:10px">${ST[t.status][0]}</span> ${t.real ? '<span style="color:var(--ok)">Genspark 真实执行</span>' : '仿真任务'}${c ? ` · 所属指令 <a class="lnk" onclick="openCmdModal('${c.id}')">#${c.no}</a>` : ''}</div></div><button class="close-x" data-close><i class="fas fa-xmark"></i></button></div>
       <div class="tm-grid mt">
         <div class="card"><div class="h4">负责人</div>${o ? `<div class="own big mt" onclick="openStaffModal('${o.id}')"><span class="avatar" style="background:${avColor(o.name)}">${esc(o.name[0])}</span><span><b>${esc(o.name)}</b><small>${esc(o.pos)} · 价值 ${o.value}</small></span></div>` : '<div class="hint mt">部门未配置员工</div>'}<div class="mt">${tierBadge(t.tier)} ${t.gap ? `<span class="gap">任务要求${TIERS[t.level].name}</span>` : ''}</div><div class="hint mt">搭档 Agent：${esc(a?.name || '')}</div></div>
-        <div class="card"><div class="h4">能力级别 → 决策调用库</div><div class="hint mt">${T.desc}</div><div class="tl-row mt">${(t.tools || []).map((k) => `<span class="tl ok"><i class="fas ${toolMeta(k).icon}"></i></span><small>${toolMeta(k).name}</small>`).join('')}</div><div class="hint mt">撰写模型 <b>${T.model}</b> · 验收门槛 <b>${T.pass}</b> 分且无未达项</div></div>
+        <div class="card"><div class="h4">能力级别 → 决策调用库</div><div class="hint mt">${T.desc}</div><div class="tl-row mt">${(t.tools || []).map((k) => `<span class="tl ok"><i class="fas ${toolMeta(k).icon}"></i></span><small>${toolMeta(k).name}</small>`).join('')}</div><div class="hint mt">推理引擎 <b>${esc((ENGINE_LIST.find((x) => x[0] === officeCfg().engine) || [, 'Ultra'])[1])}</b> · 验收门槛 <b>${T.pass}</b> 分且无未达项</div></div>
         <div class="card"><div class="h4">交付物</div><div class="mt" style="font-size:13px"><b>${esc(t.deliverable || '—')}</b></div>${t.plan?.framework ? `<div class="hint mt"><b>方法框架：</b>${esc(t.plan.framework)}</div>` : ''}${t.plan?.understanding ? `<div class="hint"><b>成功标志：</b>${esc(t.plan.understanding)}</div>` : ''}</div>
       </div>
+      ${masterCard}${packCard}
       <div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-bullseye" style="color:var(--c1)"></i> 验收标准</span>${ac ? `<span class="acc ${ac.pass ?? ac.total >= ac.threshold ? 'ok' : 'no'}" style="font-size:13px"><b>${ac.total}</b><small>/${ac.threshold}</small> · ${ac.met}/${(ac.items || []).length} 条达标</span>` : '<span class="dim" style="font-size:12px">待验收</span>'}</div><ul class="crit">${crit || '<li class="dim">规划阶段生成</li>'}</ul>${ac?.feedback || t.feedback ? `<div class="fb-box ${ac?.pass ? 'ok' : ''}"><b>${ac?.pass ? '验收亮点' : '验收意见'}：</b>${esc(ac?.feedback || t.feedback)}</div>` : ''}</div>
       <div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-table-list" style="color:var(--c1)"></i> 执行表</span><span class="dim" style="font-size:12px">每一步调用都留痕：工具、关键词、来源、模型、用时</span></div>${traceRows(t)}</div>
       ${t.output ? `<div class="card mt"><div class="ct"><span class="h3"><i class="fas fa-file-lines" style="color:var(--c1)"></i> 成果 ${t.history.length > 1 ? `<span class="tag p">第 ${t.history.length} 版</span>` : ''}</span><button class="btn btn-ghost btn-sm" id="tm-copy"><i class="fas fa-copy"></i>复制</button></div><div class="md out">${mdRender(t.output)}</div></div>` : `<div class="card mt"><div class="flex">${['exec', 'rework', 'verify'].includes(t.status) ? '<i class="fas fa-spinner fa-spin" style="color:var(--c1)"></i>' : '<i class="fas fa-hourglass-half dim"></i>'}<span>${t.error ? `执行失败：${esc(t.error)}` : t.status === 'queued' ? '已分发，等待执行' : '执行中，执行表实时更新…'}</span><div class="bar" style="flex:1"><i style="width:${t.progress}%"></i></div></div>${t.paused ? '<button class="btn btn-ghost btn-sm mt" id="tm-retry"><i class="fas fa-rotate"></i>重试</button>' : ''}${!t.real && ai && !['done', 'rejected'].includes(t.status) ? '<button class="btn btn-pri btn-sm mt" id="tm-real"><i class="fas fa-bolt"></i>改为 Genspark 真实执行</button>' : ''}</div>`}
@@ -373,7 +397,7 @@
         ${ai && !t.deep ? '<button class="btn btn-ghost btn-sm" id="tm-deep"><i class="fas fa-brain"></i>超级智能体深度执行</button>' : ''}
       </div></div>` : ''}`;
   }
-  const taskSig = (t) => [t.status, t.step, t.trace?.length, t.trace?.filter((e) => e.status === 'run').length, t.accept?.total, t.history.length, t.deep?.state].join('|');
+  const taskSig = (t) => [t.status, t.step, t.trace?.length, t.trace?.filter((e) => e.status === 'run').length, t.accept?.total, t.history.length, t.deep?.state, t.pack ? (t.pack.slides || []).map((s) => s.url ? 1 : s.pending ? 0 : 2).join('') : ''].join('|');
   window.openTaskModal = function (id) {
     const t = Flow.task(id); if (!t) return toast('任务已归档');
     const m = openModal(taskModalHtml(t));
@@ -383,6 +407,7 @@
   function bindTaskModal(m, t) {
     const id = t.id, on = (sel, fn) => { const el = $(sel, m); if (el) el.onclick = fn; };
     $$('[data-close]', m).forEach((b) => (b.onclick = closeOverlay));
+    $$('[data-rv]', m).forEach((b) => (b.onclick = () => openReport(id, b.dataset.tab)));
     on('#tm-real', () => { t.real = true; t.status = 'queued'; t.progress = 0; t.age = 0; t.trace = []; t.plan = null; t.evidence = null; saveState(); Flow.refresh(); toast('已交给 Genspark 真实执行'); openTaskModal(id); });
     on('#tm-retry', () => { Flow.retryTask(t); toast('已重新排队'); closeOverlay(); });
     on('#tm-copy', () => { navigator.clipboard?.writeText(t.output || ''); toast('已复制成果'); });

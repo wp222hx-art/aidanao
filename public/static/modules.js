@@ -8,7 +8,7 @@
   const stMap = new Proxy({}, { get: (_, k) => (window.TASK_ST || {})[k] || ['—', 'p'] });
 
   window.renderModule = function (k, main) {
-    const fn = { cockpit, leads, agents, mech, studio, approve, ledger, org }[k] || cockpit;
+    const fn = { cockpit, leads, agents, mech, studio, approve, ledger, org }[k] || (window.MOD_PAGES || {})[k] || cockpit;
     main.innerHTML = `<section class="page" id="page"></section>`;
     fn($('#page'), true);
   };
@@ -18,6 +18,7 @@
     const live = { cockpit: 4, mech: 3, ledger: 4, approve: 3, agents: 4 };
     if (live[k] && tickN % live[k] === 0) { if (document.activeElement?.closest?.('#page') && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return; const st = page.scrollTop; ({ cockpit, mech, ledger, approve, agents })[k](page); page.scrollTop = st; }
     if (k === 'leads' && tickN % 2 === 0) renderLeadList();
+    if (k === 'archive' && tickN % 4 === 0 && window.MOD_PAGES?.archive) { const n = (S.archive || []).length + ':' + (S.archive?.[0]?.stats?.slides || 0); if (page.dataset.sig !== n && !document.activeElement?.closest?.('#page')) { const st = page.scrollTop; MOD_PAGES.archive(page); page.dataset.sig = n; page.scrollTop = st; } }
   };
 
   // ---------------- 经营驾驶舱 ----------------
