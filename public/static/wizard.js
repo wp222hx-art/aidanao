@@ -11,7 +11,8 @@
       <header class="wiz-top">
         <div class="logo"><div class="orb"><i class="fas fa-brain"></i></div><div>企业智脑<div class="dim" style="font-size:11px;font-weight:400">老板的 AI 经营指挥舱 · 数字孪生创建</div></div></div>
         <nav class="steps">${STEPS.map((s, i) => `${i ? '<span class="step-line"></span>' : ''}<div class="step ${S.step === i + 1 ? 'on' : S.step > i + 1 ? 'done' : ''}" data-s="${i + 1}"><span class="n">${S.step > i + 1 ? '<i class="fas fa-check"></i>' : i + 1}</span>${s}</div>`).join('')}</nav>
-        <button class="btn btn-ghost btn-sm" id="btn-demo"><i class="fas fa-wand-magic-sparkles"></i>一键体验演示企业</button>
+        <span class="flex" style="gap:8px"><button class="btn btn-ghost btn-sm" id="btn-ideas" title="不用建企业，也能给任何公司出主意"><i class="fas fa-lightbulb" style="color:#f59e0b"></i>给企业献策</button>
+        <button class="btn btn-ghost btn-sm" id="btn-demo"><i class="fas fa-wand-magic-sparkles"></i>一键体验演示企业</button></span>
       </header>
       <main class="wiz-body" id="wiz-body"></main>
       <footer class="wiz-foot">
@@ -24,6 +25,7 @@
     $('#btn-prev').onclick = () => { S.step--; saveState(); renderWizard(); };
     $('#btn-next').onclick = next;
     $('#btn-demo').onclick = loadDemo;
+    $('#btn-ideas').onclick = () => window.openIdeas && openIdeas('other');
     [null, stepIndustry, stepScan, stepLayout, stepStaff][S.step]();
     updateNext();
   };

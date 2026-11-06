@@ -5,6 +5,15 @@
   "pages_build_output_dir": "./dist",
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  // 智导献策：跨用户共享的入驻企业 / 献策 / 发信记录（本地开发自动使用 --local SQLite；上线前用 wrangler d1 create 替换 database_id）
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "webapp-production",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
   ]
   // "vars": {
   //   "MY_VAR": "my-variable"

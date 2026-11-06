@@ -4,7 +4,8 @@
 import { Hono } from 'hono'
 import { DIVISIONS } from './industries'
 
-type Bindings = { GSK_API_KEY?: string; GSK_BASE_URL?: string; AI_MODEL?: string }
+type Bindings = { GSK_API_KEY?: string; GSK_BASE_URL?: string; AI_MODEL?: string; DB?: D1Database; IDEA_MAIL_FROM?: string; IDEA_MAIL_REDIRECT?: string; IDEA_MAIL_LIVE?: string; BRAIN_ACCESS_CODE?: string }
+import { matchCompany } from './idea-util'
 const ai = new Hono<{ Bindings: Bindings }>()
 
 const base = (e: Bindings) => (e.GSK_BASE_URL || 'https://www.genspark.ai').replace(/\/$/, '')
@@ -435,7 +436,7 @@ ai.post('/models/test', async (c) => {
 // =====================================================================
 // 老板指令 → 深度研究 → 发展规划（多创意方案）→ 可行性校验 → 老板决策 → 分发
 // =====================================================================
-const cmdCtx = (b: any) => `当前日期：${today()}\n企业：${clip(b.company, 60)}（${clip(b.industry, 60)}）\n主营：${clip(b.business, 200)}${b.profile ? `\n企业画像：${clip(b.profile, 700)}` : ''}\n老板指令：${clip(b.text, 300)}${(b.knowledge || []).length ? `\n企业经验库：\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}`
+const cmdCtx = (b: any) => `当前日期：${today()}\n企业：${clip(b.company, 60)}（${clip(b.industry, 60)}）\n主营：${clip(b.business, 200)}${b.profile ? `\n企业画像：${clip(b.profile, 700)}` : ''}\n老板指令：${clip(b.text, 300)}${b.idea ? `\n【创意提案（来自${clip(b.ideaBy || '提案人', 20)}）——以此为核心思路做研究验证与优化；提案里的数字未经验证，一律以研究数据为准】\n${clip(b.idea, 1600)}` : ''}${(b.knowledge || []).length ? `\n企业经验库：\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}`
 
 ai.post('/cmd/research/plan', async (c) => {
   const b = await c.req.json<any>()
@@ -502,6 +503,59 @@ ai.post('/cmd/feasibility', async (c) => {
   const high = issues.filter((x: any) => x.level === 'high').length
   const verdict = total >= 80 && !high ? 'go' : total >= 60 ? 'revise' : 'nogo'
   return c.json({ ok: true, model: eng(b, c.env), dims, total, verdict, issues, assumptions: lines(out.assumptions, 4, 80), optionsView: (out.optionsView || []).slice(0, 3).map((o: any) => ({ key: clip(o.key, 2), score: Math.max(0, Math.min(100, Math.round(+o.score || 0))), note: clip(o.note, 60) })), summary: clip(out.summary, 160) })
+})
+
+// =====================================================================
+// 智导献策：识别目标企业（画像 + 是否入驻 + 公开邮箱）→ AI 写策划案
+// =====================================================================
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+const EMAIL_BAD = /example|sentry|wixpress|\.(png|jpe?g|gif|webp|svg)$|noreply|no-reply|donotreply|@2x|xxx@|test@|your(name|email)?@|email@domain/i
+ai.post('/idea/target', async (c) => {
+  const b = await c.req.json<any>()
+  const n = clip(b.name, 60).trim(); if (!n) throw new AiError('请输入企业名称', 400)
+  const [s1, s2] = await Promise.all([
+    tool(c.env, 'batch_web_search', { queries: [`${n} 公司简介 主营业务 产品`, `${n} 最新动态 2026`, `${n} 用户 吐槽 痛点`] }).catch(() => null),
+    tool(c.env, 'batch_web_search', { queries: [`${n} 商务合作 邮箱`, `${n} 联系我们 邮箱`, `${n} 官网 contact email`] }).catch(() => null),
+  ])
+  const ev1 = String(s1?.result || ''), ev2 = String(s2?.result || '')
+  const items = [...parseBatch(ev2), ...parseBatch(ev1)]
+  let pageText = '', pageUrl = ''
+  const contact = items.find((x) => /contact|lianxi|about|cooperat|business|联系|合作/i.test(x.url + x.title))
+  if (contact) { try { const d = await tool(c.env, 'crawler', { url: contact.url }); pageText = clip(String(d?.result || ''), 12000); pageUrl = contact.url } catch { } }
+  const pool = `${ev1}\n${ev2}\n${pageText}`
+  const found = [...new Set((pool.match(EMAIL_RE) || []).map((e) => e.replace(/[.,;:]+$/, '').toLowerCase()))].filter((e) => !EMAIL_BAD.test(e)).slice(0, 24)
+  const srcOf = (e: string) => { if (pageText.toLowerCase().includes(e)) return { title: '官网联系页', url: pageUrl }; const it = items.find((x) => (x.snippet + x.title).toLowerCase().includes(e)); return it ? { title: it.title, url: it.url } : { title: '全网检索结果', url: '' } }
+  const out = await llm(c.env,
+    '你是商业情报分析师 + 资深策划人。根据检索证据为一家目标企业建立「献策画像」：它是谁、在做什么、最近在关注什么、用户和业务有哪些痛点、外部人士可以从哪些方向给它出好主意。只基于证据，推断要写「推断」。邮箱只能从给定候选中挑选，严禁编造任何邮箱。输出 JSON。',
+    `目标企业：${n}\n\n【检索证据】\n${clip(ev1, 6500)}\n\n【联系方式检索】\n${clip(ev2, 3000)}\n${pageText ? `\n【官网联系页节选】\n${clip(pageText, 2500)}` : ''}\n\n【候选邮箱（只能从这里选，可以一个都不选）】\n${found.join(', ') || '（无）'}\n\n输出 JSON：{"name":"企业正式名称","short":"常用简称","aliases":["别名/品牌名，最多4个"],"industry":"所属行业","business":"主营业务，≤50字","products":["代表产品/品牌，最多5个"],"recent":["近期动态，每条≤40字，最多3条"],"audience":"核心用户，≤30字","pains":["用户或业务痛点，每条≤35字，3-4条"],"opportunities":["外部人士可以献策的方向，每条≤30字，3-4条"],"ideaHints":["给普通用户的点子灵感示例，每条≤30字，3条"],"emails":[{"email":"必须是候选中的原文","type":"商务合作|市场品牌|媒体|客服|投资者关系|招聘|其他","why":"≤20字"}],"site":"官网域名（证据中出现的才写，否则空）","found":证据是否确实描述了该企业(true/false)}`,
+    { model: eng(b, c.env), effort: eff(b) })
+  const rank: Record<string, number> = { 商务合作: 0, 市场品牌: 1, 其他: 2, 媒体: 3, 投资者关系: 4, 客服: 5, 招聘: 9 }
+  const emails = (out.emails || []).map((x: any) => ({ email: String(x.email || '').toLowerCase().trim(), type: clip(x.type || '其他', 8), why: clip(x.why, 40) }))
+    .filter((x: any) => found.includes(x.email) && x.type !== '招聘')
+    .sort((a: any, b2: any) => (rank[a.type] ?? 3) - (rank[b2.type] ?? 3)).slice(0, 4)
+    .map((x: any) => ({ ...x, source: srcOf(x.email) }))
+  const reg = await matchCompany(c.env.DB, n, out.name, out.short, ...(out.aliases || []))
+  return c.json({ ok: true, model: eng(b, c.env), name: clip(out.name || n, 60), short: clip(out.short || n, 20), aliases: lines(out.aliases, 4, 20), industry: clip(out.industry, 40), business: clip(out.business, 100), products: lines(out.products, 5, 20), recent: lines(out.recent, 3, 80), audience: clip(out.audience, 60), pains: lines(out.pains, 4, 70), opportunities: lines(out.opportunities, 4, 60), ideaHints: lines(out.ideaHints, 3, 60), emails, site: clip(out.site, 60), found: !!out.found, registered: reg ? { id: reg.id, name: reg.name } : null, candidates: found.length })
+})
+
+ai.post('/idea/write', async (c) => {
+  const b = await c.req.json<any>()
+  const T = b.target || {}
+  const who = b.self ? `提案对象是提案人自己经营的企业「${clip(T.name, 40)}」，提案人就是老板本人。方案要能直接交给公司的 AI 智脑执行。` : `提案人是一位普通用户（外部人士），要把点子献给「${clip(T.name, 40)}」。语气真诚、专业、尊重，不夸大、不贬低企业、不涉及企业内部机密，也不承诺对方一定会受益。`
+  const out = await llm(c.env,
+    `你是顶级策划人 + ${clip(T.industry || '该行业', 30)}行业专家，擅长把一个粗糙的想法打磨成企业愿意认真看的策划案。
+原则：
+1. 尊重并保留提案人的核心想法，不偷换主题，只做补全、专业化与落地化。
+2. 结合目标企业的真实业务、产品和痛点，讲清「为什么是这家企业、为什么是现在」。
+3. 方案要具体：写清玩法/机制、落地三步、需要企业提供的资源。
+4. 数字一律标注「估算」并写口径；不得捏造企业数据。
+5. ${who}
+输出 JSON（proposal 字段为 Markdown 字符串，换行用 \\n）。`,
+    `【目标企业画像】\n名称：${clip(T.name, 60)}（${clip(T.industry, 40)}）\n主营：${clip(T.business, 120)}\n代表产品：${lines(T.products, 5, 20).join('、')}\n近期动态：${lines(T.recent, 3, 80).join('；')}\n核心用户：${clip(T.audience, 60)}\n痛点：${lines(T.pains, 4, 70).join('；')}\n\n【点子类型】${clip(b.category, 20) || '不限'}\n【提案人的原始想法】\n${clip(b.idea, 1500)}${b.feedback ? `\n\n【提案人对上一版的修改意见——必须照改】\n${clip(b.feedback, 500)}\n【上一版】\n${clip(b.previous, 3000)}` : ''}\n\n输出 JSON：{"title":"提案标题，≤24字，有记忆点","oneLiner":"一句话说清这个点子，≤50字","tags":["关键词，3-4个"],"proposal":"Markdown 策划案，900-1600字，章节固定为：## 一句话提案 / ## 为什么是${clip(T.short || T.name, 12)}、为什么是现在 / ## 创意方案 / ## 落地三步走 / ## 预期价值（估算） / ## 风险与应对 / ## 需要企业提供的资源","eval":{"novelty":0-100,"fit":0-100,"feasibility":0-100,"value":0-100,"comment":"客观点评，≤60字","improve":["还能更好的地方，2-3条，每条≤30字"]},"email":{"subject":"邮件标题，≤36字，像真人写的","opening":"邮件开场白，2-3句，≤120字，说明自己是谁、为什么写这封信"}}`,
+    { model: eng(b, c.env), effort: eff(b), json: true })
+  const sc = (k: string) => Math.max(0, Math.min(100, Math.round(+out.eval?.[k] || 0)))
+  const ev = { novelty: sc('novelty'), fit: sc('fit'), feasibility: sc('feasibility'), value: sc('value'), comment: clip(out.eval?.comment, 120), improve: lines(out.eval?.improve, 3, 60) }
+  return c.json({ ok: true, model: eng(b, c.env), title: clip(out.title, 40), oneLiner: clip(out.oneLiner, 100), tags: lines(out.tags, 4, 12), proposal: clip(out.proposal, 6000), eval: { ...ev, total: Math.round(ev.novelty * .25 + ev.fit * .25 + ev.feasibility * .25 + ev.value * .25) }, email: { subject: clip(out.email?.subject, 60), opening: clip(out.email?.opening, 240) } })
 })
 
 // ---------- ⑥ 简历解析 ----------
@@ -579,4 +633,5 @@ ai.get('/file', async (c) => {
   return new Response(r.body, { headers: { 'Content-Type': r.headers.get('Content-Type') || d.content_type || 'application/octet-stream', 'Cache-Control': 'private, max-age=3000' } })
 })
 
+export { tool, llm, AiError, clip, fileUrl }
 export default ai

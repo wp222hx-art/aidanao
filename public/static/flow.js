@@ -91,7 +91,8 @@
       id: uid('c'), no, text, goal: '', source: opt.source || 'boss', parentId: opt.parentId || null, iteration: opt.iteration || 1,
       color: CMD_COLORS[(no - 1) % CMD_COLORS.length], stage: 'plan', plan: [], taskIds: [], day: S.sim.day, t: simTime(),
       log: [], review: null, acceptance: null, real: isReal(), feedback: opt.feedback || '', presetPlan: opt.plan || null, confirm: null, replans: 0, ref: opt.ref || null,
-      skipPrep: !!opt.plan, trace: [], research: null, strategy: null, feas: null, feasHist: [], decision: null, decisionEval: null
+      skipPrep: !!opt.plan, trace: [], research: null, strategy: null, feas: null, feasHist: [], decision: null, decisionEval: null,
+      idea: opt.idea || '', ideaBy: opt.ideaBy || '', ideaRef: opt.ideaRef || null
     };
     S.sim.commands.unshift(c);
     if (S.sim.commands.length > 40) { const drop = S.sim.commands.slice(40).filter((x) => ['done', 'cancelled'].includes(x.stage)).map((x) => x.id); S.sim.commands = S.sim.commands.filter((x) => !drop.includes(x.id)); S.sim.tasks = S.sim.tasks.filter((t) => !drop.includes(t.cmdId)); }
@@ -136,7 +137,7 @@
   function ctrace(c, step, o = {}) { c.trace = c.trace || []; const e = { id: uid('y'), step, at: stamp(), ts: Date.now(), status: 'run', ...o }; c.trace.push(e); if (c.trace.length > 40) c.trace.shift(); refresh(); return e; }
   function cok(c, e, o = {}) { Object.assign(e, { status: 'ok', ms: Date.now() - e.ts }, o); refresh(); }
   function cfail(c, e, msg) { e.status = 'fail'; e.detail = msg; e.ms = Date.now() - e.ts; refresh(); }
-  const cmdBody = (c) => ({ ...ctxBase(), text: c.text, profile: S.company.profile ? [S.company.profile.positioning, (S.company.profile.opportunities || []).join('；'), (S.company.profile.risks || []).join('；')].filter(Boolean).join('\n') : '', knowledge: knowledgeFor(null) });
+  const cmdBody = (c) => ({ ...ctxBase(), text: c.text, profile: S.company.profile ? [S.company.profile.positioning, (S.company.profile.opportunities || []).join('；'), (S.company.profile.risks || []).join('；')].filter(Boolean).join('\n') : '', knowledge: knowledgeFor(null), idea: c.idea || '', ideaBy: c.ideaBy || '' });
   const alive = (c, st) => c.stage === st;
   async function deepPlan(c) {
     const body = cmdBody(c), depts = S.depts.map((d) => ({ id: d.id, name: d.name }));
@@ -194,7 +195,7 @@
       log(c.id, 'plan', `⚠️ 深度规划中断（${esc(er.message)}），改用快速拆解`, '#dc2626');
       c.stage = 'plan';
       try {
-        const r = await AI.call('/command', { ...ctxBase(), engine: roleModel('strategy'), text: c.text, feedback: c.feedback, knowledge: knowledgeFor(null), depts });
+        const r = await AI.call('/command', { ...ctxBase(), engine: roleModel('strategy'), text: c.text, feedback: c.feedback, knowledge: knowledgeFor(null), depts, idea: c.idea || '', ideaBy: c.ideaBy || '' });
         if (!r.tasks?.length) throw new Error('未拆解出任务');
         c.goal = r.goal || c.text; c.plan = r.tasks.map((x) => ({ ...x, kind: deptOf(x.deptId)?.lib === 'sales' && LEAD_RE.test(x.title) ? 'leads' : null }));
       } catch (e2) { localPlan(c); }
@@ -752,6 +753,7 @@
     c.stage = 'done'; c.doneAt = stamp();
     // 及时归档：各部门 Word / Excel / PPT + 执行表 + 验收 + 复盘
     if (window.Archive) { const rec = Archive.add(c); log(c.id, 'archive', `🗂️ #${c.no} 已归档：${rec.stats.depts} 个部门 · ${rec.stats.docs} 份文档 · ${rec.stats.slides} 页幻灯片 · <a class="lnk" onclick="gotoView('archive')">查看项目档案</a>`, '#0f766e'); }
+    if (c.idea && window.ideaCmdDone) { try { ideaCmdDone(c); } catch (e) { console.warn(e); } }
     saveState(); refresh();
   }
 

@@ -36,6 +36,7 @@
     { k: 'studio', i: 'fa-clapperboard', n: '内容工厂' },
     { k: 'ledger', i: 'fa-sack-dollar', n: '价值账本' },
     { k: 'org', i: 'fa-sitemap', n: '组织人才' },
+    { k: 'ideas', i: 'fa-lightbulb', n: '献策网络' },
     { k: 'masters', i: 'fa-user-tie', n: '大师智库' },
     { k: 'models', i: 'fa-sliders', n: '模型配置' },
     { k: 'archive', i: 'fa-box-archive', n: '项目档案' }
@@ -59,7 +60,7 @@
         <div class="side-sec cmd-box">
           <div class="flex between"><span class="h3"><i class="fas fa-crown" style="color:#d97706"></i> 老板指令</span><span class="tag p">一切工作从这里开始</span></div>
           <textarea id="cmd" rows="2" placeholder="例：本月把华东地区的订单做上去"></textarea>
-          <div class="flex between"><label class="chk"><input type="checkbox" id="cmd-routine"> 设为每日例行（09:00 自动下发）</label><button class="btn btn-pri btn-sm" id="cmd-go"><i class="fas fa-paper-plane"></i>下达</button></div>
+          <div class="flex between"><label class="chk"><input type="checkbox" id="cmd-routine"> 设为每日例行（09:00 自动下发）</label><span class="flex" style="gap:6px"><button class="btn btn-ghost btn-sm" id="cmd-idea" title="把我自己的想法交给 AI 写成提案，再让智脑落地"><i class="fas fa-lightbulb" style="color:#f59e0b"></i>用我的想法</button><button class="btn btn-pri btn-sm" id="cmd-go"><i class="fas fa-paper-plane"></i>下达</button></span></div>
           <div class="flex wrap" style="gap:6px">${QUICK.map((q) => `<button class="tag" data-q="${q}" style="cursor:pointer">${q}</button>`).join('')}</div>
         </div>
         <div class="side-sec side-hd"><span class="h3"><i class="fas fa-list-check" style="color:var(--c1)"></i> 指令队列</span><span class="dim" style="font-size:11px" id="cmdq-count"></span></div>
@@ -77,6 +78,7 @@
     $('#nav-reset').onclick = () => { if (confirm('确定重新创建企业？当前企业数据将清空。')) { stopSim(); resetState(); renderApp(); } };
     const go = () => { const v = $('#cmd').value.trim(); if (!v) return toast('请输入指令'); const r = $('#cmd-routine').checked; $('#cmd').value = ''; $('#cmd-routine').checked = false; window.bossCommand(v, { routine: r }); };
     $('#cmd-go').onclick = go;
+    $('#cmd-idea').onclick = () => { const v = $('#cmd').value.trim(); if (window.openIdeas) { openIdeas('self'); if (v && window.ideaPrefill) ideaPrefill(v); } };
     $('#cmd').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); go(); } };
     $$('[data-q]').forEach((b) => b.onclick = () => window.bossCommand(b.dataset.q));
     $$('#log-seg button').forEach((b) => b.onclick = () => { logScope = b.dataset.s; renderFeed(); });

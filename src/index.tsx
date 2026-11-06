@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import aiRoutes from './ai'
+import ideaRoutes from './ideas'
 
-const app = new Hono<{ Bindings: { GSK_API_KEY?: string; BRAIN_ACCESS_CODE?: string } }>()
+const app = new Hono<{ Bindings: { GSK_API_KEY?: string; BRAIN_ACCESS_CODE?: string; DB?: D1Database } }>()
 
 // 访问口令（可选）：设置 BRAIN_ACCESS_CODE 后，调用 AI 接口须携带 X-Brain-Code，防止他人消耗你的 Genspark 积分
 app.use('/api/ai/*', async (c, next) => {
@@ -10,6 +11,7 @@ app.use('/api/ai/*', async (c, next) => {
   await next()
 })
 app.route('/api/ai', aiRoutes)
+app.route('/api/ideas', ideaRoutes)
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 
@@ -126,6 +128,7 @@ app.get('/', (c) => c.html(`<!DOCTYPE html>
 <script src="/static/office.js"></script>
 <script src="/static/masters.js"></script>
 <script src="/static/models.js"></script>
+<script src="/static/ideas.js"></script>
 <script src="/static/ai.js"></script>
 <script src="/static/main.js"></script>
 </body>
