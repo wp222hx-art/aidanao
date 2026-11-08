@@ -39,12 +39,14 @@
             <ul>
               <li><i class="fas fa-check"></i>数字孪生企业，99+ 个 Agent 分部门上岗</li>
               <li><i class="fas fa-check"></i><b>用我自己的想法</b>解决企业问题，AI 写成策划案后直接交给智脑执行</li>
+              <li><i class="fas fa-check"></i>服务中心：数据雷达、热点视频、贸易数据、政务办事、官网 / 海报 / 视频、7×24 客服</li>
               <li><i class="fas fa-check"></i>企业入驻后，用户写给你的点子直接进收件箱</li>
             </ul>
             <div class="dir-acts">
               ${has ? `<button class="btn btn-pri" id="a-enter"><i class="fas fa-arrow-right-to-bracket"></i>进入「${esc(co.length > 14 ? co.slice(0, 14) + '…' : co)}」</button>
                 <button class="btn btn-ghost" id="a-idea"><i class="fas fa-lightbulb"></i>用我的想法</button>
-                <button class="btn btn-ghost" id="a-inbox"><i class="fas fa-inbox"></i>企业收件箱</button>`
+                <button class="btn btn-ghost" id="a-inbox"><i class="fas fa-inbox"></i>企业收件箱</button>
+                <button class="btn btn-ghost" id="a-svc"><i class="fas fa-layer-group"></i>服务中心</button>`
               : `<button class="btn btn-pri" id="a-create"><i class="fas fa-wand-magic-sparkles"></i>${S.step > 1 ? '继续创建企业智脑' : '创建企业智脑'}</button>
                 <button class="btn btn-ghost" id="a-demo"><i class="fas fa-play"></i>体验演示企业</button>`}
             </div>
@@ -67,6 +69,8 @@
           </article>
         </section>
         <section class="home-stats" id="home-stats"></section>
+        <section class="home-feed" id="home-feed"></section>
+        <footer class="home-foot"><span>智导 · 企业智脑 × 献策网络</span><a id="h-admin"><i class="fas fa-shield-halved"></i>平台后台</a></footer>
       </main>
     </div>`;
     const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
@@ -75,6 +79,8 @@
     on('a-demo', () => { enterBrain(); if (window.loadDemo) loadDemo(); });
     on('a-idea', () => openIdeas('self'));
     on('a-inbox', () => openIdeas(null, 'inbox'));
+    on('a-svc', () => window.openServices && openServices());
+    on('h-admin', () => window.openAdmin && openAdmin());
     on('b-go', () => openIdeas('other'));
     on('b-mine', () => openIdeas(null, 'mine'));
     on('b-square', () => openIdeas(null, 'square'));
@@ -85,5 +91,14 @@
     };
     paint();
     fetch('/api/ideas/stats').then((r) => r.json()).then((j) => { if (j.ok) { stats = j; paint(); } }).catch(() => { });
+    // 献策广场精选：让主页一打开就能看到市场的热闹
+    fetch('/api/ideas/market?sort=hot').then((r) => r.json()).then((j) => {
+      const el = $('#home-feed'); if (!el || !j.ok || !j.ideas?.length) return;
+      const KN = { proposal: ['fa-file-lines', '策划案'], suggestion: ['fa-comment-dots', '改进建议'], design: ['fa-palette', '设计思路'] };
+      el.innerHTML = `<div class="hf-hd"><h3><i class="fas fa-fire" style="color:#ef4444"></i> 献策广场正在热议</h3><a id="hf-more">查看全部 <i class="fas fa-arrow-right"></i></a></div>
+        <div class="hf-row">${j.ideas.slice(0, 8).map((x) => `<button class="hf-card k-${x.kind}" data-hf="${esc(x.target)}"><span class="id-kb k-${x.kind}"><i class="fas ${KN[x.kind]?.[0]}"></i>${KN[x.kind]?.[1]}</span>${x.sample ? '<span class="mk-sample">样板</span>' : ''}<b>${esc(x.title)}</b><small>→ ${esc(x.target)}</small><span class="hf-like"><i class="fas fa-heart"></i>${x.likes}</span></button>`).join('')}</div>`;
+      $('#hf-more').onclick = () => openIdeas(null, 'square');
+      $$('[data-hf]', el).forEach((b) => b.onclick = () => openIdeas(null, 'square'));
+    }).catch(() => { });
   };
 })();

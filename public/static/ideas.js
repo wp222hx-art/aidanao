@@ -5,9 +5,11 @@
   const CATS = ['产品创意', '营销活动', '商业模式', '用户体验', '游戏玩法', '降本增效', '品牌联名', '社会公益'];
   const HOT = ['米哈游', '小米', '蔚来', '瑞幸咖啡', '泡泡玛特', '名创优品', '比亚迪', '网易游戏'];
   const ST = { delivered: ['已送达企业收件箱', 'ok'], emailed: ['已代发邮件', 'ok'], saved: ['公开献策 · 待企业入驻认领', 'p'], read: ['企业已读', ''], adopted: ['企业已采纳', 'ok'], replied: ['企业已回复', 'ok'], declined: ['企业婉拒', 'bad'], done: ['已落地执行', 'ok'] };
+  const KINDS = [['proposal', 'fa-file-lines', '策划案', '完整方案：为什么做、怎么做、价值多大'], ['suggestion', 'fa-comment-dots', '改进建议', '指出问题 + 给出可执行的改进'], ['design', 'fa-palette', '设计思路', '视觉概念 + AI 生成设计稿']];
+  const KN = Object.fromEntries(KINDS.map(([k, i, n]) => [k, [i, n]]));
   const CH = { inbox: ['fa-inbox', '直推收件箱'], email: ['fa-envelope', '邮件代发'], public: ['fa-globe', '公开献策'] };
   let D = (() => { try { return JSON.parse(localStorage.getItem(DRAFTK)) || {}; } catch { return {}; } })();
-  D = Object.assign({ tab: 'make', mode: 'other', q: '', target: null, cat: '产品创意', idea: '', nick: '', contact: '', res: null, fb: '', via: '', emailTo: '', consent: false, sent: null }, D);
+  D = Object.assign({ tab: 'make', mode: 'other', q: '', target: null, cat: '产品创意', kind: 'proposal', listed: true, idea: '', nick: '', contact: '', res: null, fb: '', via: '', emailTo: '', consent: false, sent: null }, D);
   let busy = '', mine = null, stats = null, inbox = null, host = null;
   const save = () => { try { localStorage.setItem(DRAFTK, JSON.stringify(D)); } catch { } };
   const api = async (path, body, method = body ? 'POST' : 'GET') => {
@@ -29,7 +31,7 @@
       <div class="flex" style="margin-left:auto;gap:8px"><button class="btn btn-ghost btn-sm" id="id-home"><i class="fas fa-house"></i>返回主页</button>${p.dataset.overlay ? '<button class="close-x" id="id-close" style="margin-left:0" title="关闭"><i class="fas fa-xmark"></i></button>' : ''}</div></div>
       <div class="id-tabs">${tabs.map(([k, i, n]) => `<button class="${D.tab === k ? 'on' : ''}" data-tab="${k}"><i class="fas ${i}"></i>${n}</button>`).join('')}</div>
       <div id="id-body" class="mt"></div>`;
-    $$('[data-tab]', p).forEach((b) => b.onclick = () => { D.tab = b.dataset.tab; if (D.tab === 'inbox') inbox = null; if (D.tab === 'mine') mine = null; if (D.tab === 'square') stats = null; save(); render(p); });
+    $$('[data-tab]', p).forEach((b) => b.onclick = () => { D.tab = b.dataset.tab; if (D.tab === 'inbox') inbox = null; if (D.tab === 'mine') mine = null; if (D.tab === 'square') { stats = null; mk.list = null; } save(); render(p); });
     $('#id-home', p).onclick = () => goHome();
     const cx = $('#id-close', p); if (cx) cx.onclick = () => { p.closest('.ideas-overlay')?.remove(); history.replaceState(null, '', location.pathname); };
     const body = $('#id-body', p);
@@ -53,11 +55,12 @@
         ${T && !T.self ? targetCard(T) : ''}`;
     }
     const curT = D.mode === 'self' ? (S.launched ? selfTarget() : null) : (T && !T.self ? T : null);
-    const ideaHtml = `<div class="id-cats">${CATS.map((c) => `<button class="${D.cat === c ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('')}</div>
+    const ideaHtml = `<div class="id-kinds">${KINDS.map(([k, i, n, d]) => `<button class="id-kind ${D.kind === k ? 'on' : ''}" data-kind="${k}"><i class="fas ${i}"></i><b>${n}</b><small>${d}</small></button>`).join('')}</div>
+      <div class="id-cats">${CATS.map((c) => `<button class="${D.cat === c ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('')}</div>
       <textarea id="id-idea" rows="5" placeholder="${D.mode === 'self' ? '用大白话写下你的想法，比如：我觉得我们可以把储能柜做成按月租赁，让小工厂也用得起…' : '用大白话写下你的想法，哪怕只有一句话，比如：给原神做一个和城市文旅联动的线下寻宝活动…'}">${esc(D.idea)}</textarea>
       ${(curT?.ideaHints || []).length ? `<div class="id-hints"><span class="dim">灵感：</span>${curT.ideaHints.map((h) => `<button data-hint="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}
       ${D.mode === 'other' ? `<div class="grid2 mt"><input id="id-nick" placeholder="你的署名（可匿名）" value="${esc(D.nick)}"><input id="id-contact" placeholder="联系方式（选填，企业想联系你时用）" value="${esc(D.contact)}"></div>` : ''}
-      <div class="flex mt"><span class="hint" style="flex:1">AI 会保留你的核心想法，结合企业真实业务补全成一份完整策划案，并给出客观评分。</span><button class="btn btn-pri" id="id-write" ${busy === 'write' || !ai() ? 'disabled' : ''}><i class="fas ${busy === 'write' ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}"></i>${busy === 'write' ? 'AI 撰写中（约 1-2 分钟）…' : R ? '重新生成' : 'AI 写成策划案'}</button></div>
+      <div class="flex mt"><span class="hint" style="flex:1">AI 会保留你的核心想法，结合企业真实业务补全成一份完整策划案，并给出客观评分。</span><button class="btn btn-pri" id="id-write" ${busy === 'write' || !ai() ? 'disabled' : ''}><i class="fas ${busy === 'write' ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}"></i>${busy === 'write' ? 'AI 撰写中（约 1-2 分钟）…' : R ? '重新生成' : `AI 写成${KN[D.kind][1]}`}</button></div>
       ${!ai() ? '<div class="hint mt" style="color:var(--bad)">需要连接 AI 才能撰写</div>' : ''}`;
     const resHtml = R ? proposalCard(R) : '';
     const sendHtml = R ? deliverPanel(curT) : '';
@@ -65,7 +68,7 @@
       ${step(1, '选择献策入口', modeHtml, true)}
       ${step(2, D.mode === 'self' ? '确认我的企业' : '选择要献策的企业', tgt, true)}
       ${step(3, '写下你的想法', ideaHtml, !!curT)}
-      ${step(4, 'AI 策划案与评估', resHtml, !!R)}
+      ${step(4, `AI ${KN[R?.kind || D.kind][1]}与评估`, resHtml, !!R)}
       ${step(5, D.mode === 'self' ? '交给企业智脑执行' : '送达企业', sendHtml, !!R)}
       </div><aside class="id-side">${sideHelp()}</aside></div>`;
     bindMake(b, curT);
@@ -86,10 +89,12 @@
   function proposalCard(R) {
     const E = R.eval || {}, dim = [['novelty', '创新度'], ['fit', '契合度'], ['feasibility', '可行性'], ['value', '价值']];
     return `<div class="id-prop">
-      <div class="id-prop-hd"><div><div class="id-title">${esc(R.title)}</div><div class="id-one">${esc(R.oneLiner)}</div><div class="mt">${(R.tags || []).map((t) => `<span class="tag p">${esc(t)}</span>`).join(' ')}</div></div>
+      <div class="id-prop-hd"><div><span class="id-kb k-${R.kind || 'proposal'}"><i class="fas ${KN[R.kind || 'proposal'][0]}"></i>${KN[R.kind || 'proposal'][1]}</span><div class="id-title">${esc(R.title)}</div><div class="id-one">${esc(R.oneLiner)}</div><div class="mt">${(R.tags || []).map((t) => `<span class="tag p">${esc(t)}</span>`).join(' ')}</div></div>
         <div class="id-score"><div class="fs-ring ${E.total >= 80 ? 'ok' : E.total >= 65 ? 'warn' : 'bad'}" style="--p:${E.total || 0}"><b>${E.total || '—'}</b><small>AI 评分</small></div></div></div>
       <div class="id-dims">${dim.map(([k, n]) => `<div><span>${n}</span><i><em style="width:${E[k] || 0}%"></em></i><b>${E[k] ?? '—'}</b></div>`).join('')}</div>
       ${E.comment ? `<div class="fb-box mt"><b>AI 点评：</b>${esc(E.comment)}${(E.improve || []).length ? `<div class="mt">${E.improve.map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>` : ''}</div>` : ''}
+      ${R.kind === 'design' ? `<div class="id-visual mt">${R.cover ? `<img src="${esc(R.cover)}" alt="AI 设计稿">` : `<div class="id-visual-empty"><i class="fas fa-image"></i><span>根据设计思路生成一张 AI 设计稿（约 20 积分）</span></div>`}
+        <div class="flex mt"><span class="hint" style="flex:1">${R.cover ? '设计稿会随献策一起展示在广场和企业收件箱' : '出图模型：' + esc(window.modelName ? modelName(roleModel('slideImage')) : 'GPT Image 2')}</span><button class="btn btn-ghost btn-sm" id="id-visual" ${busy ? 'disabled' : ''}><i class="fas ${busy === 'visual' ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}"></i>${busy === 'visual' ? '出图中…' : R.cover ? '换一张' : '生成设计稿'}</button></div></div>` : ''}
       <div class="md id-md mt">${mdRender(R.proposal)}</div>
       <div class="flex mt"><input id="id-fb" placeholder="不满意？写下修改意见，比如：更聚焦年轻用户 / 预算控制在 10 万以内" value="${esc(D.fb)}" style="flex:1"><button class="btn btn-ghost btn-sm" id="id-revise" ${busy ? 'disabled' : ''}><i class="fas fa-rotate"></i>按意见改一版</button><button class="btn btn-ghost btn-sm" id="id-copy"><i class="fas fa-copy"></i>复制</button></div></div>`;
   }
@@ -111,6 +116,7 @@
     return `<div class="id-via">${opts.map(([k, i, n, d]) => `<label class="id-opt ${D.via === k ? 'on' : ''}"><input type="radio" name="id-via" value="${k}" ${D.via === k ? 'checked' : ''} hidden><i class="fas ${i}"></i><div><b>${n}</b><small>${d}</small></div></label>`).join('')}</div>
       ${D.via === 'email' ? `<div class="id-email mt"><div class="flex"><span class="hint">收件邮箱</span><select id="id-to" style="flex:1">${T.emails.map((e) => `<option value="${esc(e.email)}" ${D.emailTo === e.email ? 'selected' : ''}>${esc(e.email)}（${esc(e.type)}）</option>`).join('')}</select></div>
         <label class="chk mt"><input type="checkbox" id="id-consent" ${D.consent ? 'checked' : ''}> 我确认这是我本人的原创想法，同意以「${esc(D.nick || '匿名用户')}」的名义，由智导代发到该企业的<b>公开</b>邮箱</label></div>` : ''}
+      <label class="chk mt"><input type="checkbox" id="id-listed" ${D.listed !== false ? 'checked' : ''}> 同时公开到献策广场（去掉联系方式，其他用户可以点赞）</label>
       <div class="flex mt"><span class="hint" style="flex:1">${D.via === 'email' ? '邮件包含：策划案全文、AI 评分、你的署名与联系方式、在线查看与退订链接。' : ''}</span><button class="btn btn-pri" id="id-send" ${busy === 'submit' || (D.via === 'email' && !D.consent) ? 'disabled' : ''}><i class="fas ${busy === 'submit' ? 'fa-spinner fa-spin' : 'fa-paper-plane'}"></i>${busy === 'submit' ? '投递中…' : '确认送达'}</button></div>`;
   }
   function sideHelp() {
@@ -137,28 +143,37 @@
     on('#id-find', find);
     const qi = $('#id-q', b); if (qi) qi.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); find(); } });
     $$('[data-hot]', b).forEach((x) => x.onclick = () => { $('#id-q', b).value = x.dataset.hot; find(); });
+    $$('[data-kind]', b).forEach((x) => x.onclick = () => { D.kind = x.dataset.kind; keep(b); save(); rerender(); });
     $$('[data-cat]', b).forEach((x) => x.onclick = () => { D.cat = x.dataset.cat; keep(b); save(); rerender(); });
     $$('[data-hint]', b).forEach((x) => x.onclick = () => { const t = $('#id-idea', b); t.value = (t.value ? t.value + '\n' : '') + x.dataset.hint; keep(b); save(); });
     ['#id-idea', '#id-nick', '#id-contact', '#id-fb'].forEach((s) => { const el = $(s, b); if (el) el.addEventListener('input', () => { keep(b); save(); }); });
     const write = async (revise) => {
       keep(b); if (!D.idea.trim()) return toast('先写下你的想法');
       busy = 'write'; D.sent = null; save(); rerender();
-      try { const r = await AI.call('/idea/write', { target: curT, idea: D.idea, category: D.cat, self: D.mode === 'self', engine: roleModel('strategy'), feedback: revise ? D.fb : '', previous: revise ? D.res?.proposal : '' }); D.res = r; if (revise) D.fb = ''; }
+      try { const r = await AI.call('/idea/write', { target: curT, idea: D.idea, category: D.cat, kind: D.kind, self: D.mode === 'self', engine: roleModel('strategy'), feedback: revise ? D.fb : '', previous: revise ? D.res?.proposal : '' }); D.res = r; if (revise) D.fb = ''; }
       catch (e) { toast('撰写失败：' + e.message, 'fa-triangle-exclamation'); }
       busy = ''; save(); rerender();
       setTimeout(() => $('.id-prop', host)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
     };
     on('#id-write', () => write(false));
     on('#id-revise', () => { keep(b); if (!D.fb.trim()) return toast('先写下修改意见'); write(true); });
+    on('#id-visual', async () => {
+      if (!D.res?.visualPrompt) return toast('这份设计思路缺少画面描述，请重新生成');
+      busy = 'visual'; rerender();
+      try { const r = await AI.call('/image', { prompt: D.res.visualPrompt, aspect: '4:3' }); D.res.cover = r.url; toast('设计稿已生成', 'fa-image'); window.AI?.refreshCredits?.(); }
+      catch (e) { toast('出图失败：' + e.message, 'fa-triangle-exclamation'); }
+      busy = ''; save(); rerender();
+    });
     on('#id-copy', () => { navigator.clipboard?.writeText(`# ${D.res.title}\n\n${D.res.proposal}`); toast('已复制策划案'); });
     $$('[name=id-via]', b).forEach((r) => r.onchange = () => { D.via = r.value; save(); rerender(); });
     on('#id-to', (e) => { D.emailTo = e.target.value; save(); }, 'onchange');
+    on('#id-listed', (e) => { D.listed = e.target.checked; save(); }, 'onchange');
     on('#id-consent', (e) => { D.consent = e.target.checked; save(); rerender(); }, 'onchange');
     on('#id-new', () => { D.res = null; D.idea = ''; D.sent = null; D.consent = false; save(); rerender(); });
     on('#id-send', async () => {
       keep(b); busy = 'submit'; rerender();
       try {
-        const r = await api('/submit', { uid: uid(), nickname: D.nick, contact: D.contact, target: curT, category: D.cat, title: D.res.title, oneLiner: D.res.oneLiner, proposal: D.res.proposal, eval: D.res.eval, emailTo: D.via === 'email' ? D.emailTo : '', emailSource: D.via === 'email' ? (curT.emails.find((e) => e.email === D.emailTo)?.source?.url || '') : '', consent: D.via === 'email' && D.consent, emailSubject: D.res.email?.subject, emailOpening: D.res.email?.opening });
+        const r = await api('/submit', { uid: uid(), nickname: D.nick, contact: D.contact, target: curT, category: D.cat, title: D.res.title, oneLiner: D.res.oneLiner, proposal: D.res.proposal, eval: D.res.eval, emailTo: D.via === 'email' ? D.emailTo : '', emailSource: D.via === 'email' ? (curT.emails.find((e) => e.email === D.emailTo)?.source?.url || '') : '', consent: D.via === 'email' && D.consent, emailSubject: D.res.email?.subject, emailOpening: D.res.email?.opening, kind: D.res.kind || D.kind, tags: D.res.tags || [], cover: D.res.cover || '', listed: D.listed !== false });
         D.sent = { ...r, target: curT.name }; mine = null;
         toast(r.channel === 'inbox' ? '已直推企业收件箱 🎯' : r.channel === 'email' ? '邮件已代发 ✉️' : (r.emailMsg || '已保存为公开献策'), 'fa-paper-plane');
       } catch (e) { toast('投递失败：' + e.message, 'fa-triangle-exclamation'); }
@@ -179,7 +194,7 @@
     if (!mine.length) { b.innerHTML = '<div class="empty-state" style="height:300px"><div><i class="fas fa-paper-plane" style="font-size:36px"></i><p class="mt">还没有献策</p><p class="hint">去「献策工作台」给你喜欢的企业出个好主意吧</p></div></div>'; return; }
     const cnt = (f) => mine.filter(f).length;
     b.innerHTML = `<div class="grid4"><div class="stat"><div class="l">我的献策</div><div class="v">${mine.length}</div></div><div class="stat"><div class="l">已送达企业</div><div class="v">${cnt((x) => x.channel !== 'public')}</div></div><div class="stat"><div class="l">企业已采纳</div><div class="v" style="color:var(--ok)">${cnt((x) => ['adopted', 'done'].includes(x.status))}</div></div><div class="stat"><div class="l">企业回复</div><div class="v">${cnt((x) => x.reply)}</div></div></div>
-      <div class="id-list mt">${mine.map((x) => { const st = ST[x.status] || [x.status, 'p']; return `<article class="id-item"><div class="flex between"><div><span class="tag"><i class="fas ${CH[x.channel]?.[0]}"></i> ${CH[x.channel]?.[1]}</span> <b>→ ${esc(x.target)}</b> <span class="dim">· ${esc(x.category || '')} · ${new Date(x.createdAt).toLocaleString('zh-CN', { hour12: false }).slice(0, 16)}</span></div><span class="tag ${st[1]}">${st[0]}</span></div>
+      <div class="id-list mt">${mine.map((x) => { const st = ST[x.status] || [x.status, 'p']; return `<article class="id-item"><div class="flex between"><div><span class="id-kb k-${x.kind}"><i class="fas ${KN[x.kind]?.[0] || 'fa-file-lines'}"></i>${KN[x.kind]?.[1] || '策划案'}</span> <span class="tag"><i class="fas ${CH[x.channel]?.[0]}"></i> ${CH[x.channel]?.[1]}</span> <b>→ ${esc(x.target)}</b> <span class="dim">· ${esc(x.category || '')} · ${new Date(x.createdAt).toLocaleString('zh-CN', { hour12: false }).slice(0, 16)}</span></div><span class="tag ${st[1]}">${st[0]}</span></div>
         <div class="id-it-t">${esc(x.title)}</div><div class="hint">${esc(x.oneLiner || '')}</div>
         ${x.emailMsg ? `<div class="hint mt"><i class="fas fa-envelope"></i> ${esc(x.emailTo ? x.emailTo + ' · ' : '')}${esc(x.emailMsg)}</div>` : ''}
         ${x.reply ? `<div class="fb-box ok mt"><b>企业回复：</b>${esc(x.reply)}</div>` : ''}
@@ -232,13 +247,76 @@
   }
 
   // ---------------- ④ 献策广场 ----------------
+  // ---------------- ④ 献策广场（市场） ----------------
+  let mk = { kind: '', sort: 'hot', cat: '', q: '', list: null, key: '' };
   function square(b) {
-    if (!stats) { b.innerHTML = '<div class="hint"><i class="fas fa-spinner fa-spin"></i> 加载中…</div>'; api('/stats').then((r) => { stats = r; rerender(); setTimeout(() => { stats = null; }, 20000); }).catch((e) => { b.innerHTML = `<div class="hint">加载失败：${esc(e.message)}</div>`; }); return; }
-    const s = stats;
-    b.innerHTML = `<div class="grid3"><div class="stat"><div class="l"><i class="fas fa-lightbulb" style="color:#f59e0b"></i> 全站献策</div><div class="v">${s.ideas}</div></div><div class="stat"><div class="l"><i class="fas fa-building" style="color:var(--ok)"></i> 入驻企业</div><div class="v">${s.companies}</div></div><div class="stat"><div class="l"><i class="fas fa-thumbs-up" style="color:var(--c1)"></i> 被企业采纳</div><div class="v">${s.adopted}</div></div></div>
-      <div class="grid2 mt"><div class="card"><div class="h3"><i class="fas fa-fire" style="color:#ef4444"></i> 最受关注的企业</div>${(s.hot || []).length ? s.hot.map((h, i) => `<div class="id-hotrow" data-go="${esc(h.name)}"><b>${i + 1}</b><span>${esc(h.name)}</span><em>${h.n} 份献策</em><button class="btn btn-ghost btn-sm">我也献一策</button></div>`).join('') : '<div class="hint mt">暂无</div>'}</div>
-        <div class="card"><div class="h3"><i class="fas fa-bolt" style="color:#f59e0b"></i> 最新献策</div>${(s.recent || []).length ? s.recent.map((r) => `<div class="id-recent"><span class="tag ${(ST[r.status] || [, 'p'])[1]}">${(ST[r.status] || [r.status])[0]}</span><div><b>${esc(r.title)}</b><small>${esc(r.nickname)} → ${esc(r.target)} · ${esc(r.category || '')}</small></div></div>`).join('') : '<div class="hint mt">暂无</div>'}</div></div>`;
-    $$('[data-go]', b).forEach((x) => x.onclick = () => { D.tab = 'make'; D.mode = 'other'; D.q = x.dataset.go; D.target = null; D.res = null; D.sent = null; save(); rerender(); setTimeout(() => $('#id-find', host)?.click(), 50); });
+    const key = [mk.kind, mk.sort, mk.cat, mk.q].join('|');
+    if (!stats) api('/stats').then((r) => { stats = r; paintTop(); setTimeout(() => { stats = null; }, 30000); }).catch(() => { });
+    if (mk.list === null || mk.key !== key) {
+      mk.key = key; mk.list = null;
+      api(`/market?kind=${mk.kind}&sort=${mk.sort}&cat=${encodeURIComponent(mk.cat)}&q=${encodeURIComponent(mk.q)}&uid=${uid()}`).then((r) => { mk.list = r.ideas; if (mk.key === key) rerender(); }).catch((e) => toast('加载失败：' + e.message, 'fa-triangle-exclamation'));
+    }
+    const sorts = [['hot', 'fa-fire', '热门'], ['new', 'fa-clock', '最新'], ['featured', 'fa-star', '精选'], ['adopted', 'fa-circle-check', '已被回应']];
+    const kinds = [['', 'fa-layer-group', '全部'], ...KINDS.map(([k, i, n]) => [k, i, n])];
+    b.innerHTML = `<section class="mk-hero"><div><h2>献策广场</h2><p>看看大家都在给哪些企业出主意：策划案、改进建议、设计思路，点赞你认同的点子，或者照着思路给同一家企业也献一策</p></div><div class="mk-top" id="mk-top"></div></section>
+      <div class="mk-bar">
+        <div class="mk-seg">${kinds.map(([k, i, n]) => `<button class="${mk.kind === k ? 'on' : ''}" data-mkind="${k}"><i class="fas ${i}"></i>${n}</button>`).join('')}</div>
+        <div class="mk-seg">${sorts.map(([k, i, n]) => `<button class="${mk.sort === k ? 'on' : ''}" data-msort="${k}"><i class="fas ${i}"></i>${n}</button>`).join('')}</div>
+        <select id="mk-cat"><option value="">全部分类</option>${CATS.map((c) => `<option ${mk.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+        <input id="mk-q" placeholder="搜索企业 / 标题，回车" value="${esc(mk.q)}">
+      </div>
+      <div class="mk-wrap"><div class="mk-grid" id="mk-grid">${mk.list === null ? Array.from({ length: 6 }, () => '<div class="mk-card sk"></div>').join('') : mk.list.length ? mk.list.map(card).join('') : '<div class="empty-state" style="grid-column:1/-1;height:260px"><div><i class="fas fa-magnifying-glass" style="font-size:32px"></i><p class="mt">没有符合条件的献策</p></div></div>'}</div>
+        <aside class="mk-side" id="mk-side"></aside></div>`;
+    paintTop();
+    $$('[data-mkind]', b).forEach((x) => x.onclick = () => { mk.kind = x.dataset.mkind; rerender(); });
+    $$('[data-msort]', b).forEach((x) => x.onclick = () => { mk.sort = x.dataset.msort; rerender(); });
+    $('#mk-cat', b).onchange = (e) => { mk.cat = e.target.value; rerender(); };
+    $('#mk-q', b).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { mk.q = e.target.value.trim(); rerender(); } });
+    $$('[data-like]', b).forEach((x) => x.onclick = async (ev) => {
+      ev.stopPropagation();
+      try { const r = await api('/like', { uid: uid(), id: x.dataset.like }); const it = mk.list.find((i) => i.id === x.dataset.like); if (it) { it.liked = r.liked; it.likes = r.likes; } x.classList.toggle('on', r.liked); x.querySelector('b').textContent = r.likes; if (r.liked) x.classList.add('pop'); setTimeout(() => x.classList.remove('pop'), 400); }
+      catch (e) { toast(e.message, 'fa-triangle-exclamation'); }
+    });
+    $$('[data-open]', b).forEach((x) => x.onclick = () => openDetail(x.dataset.open));
+    $$('[data-also]', b).forEach((x) => x.onclick = (ev) => { ev.stopPropagation(); alsoFor(x.dataset.also); });
+  }
+  function card(x) {
+    const k = KN[x.kind] || KN.proposal, st = ST[x.status] || ['', 'p'];
+    return `<article class="mk-card k-${x.kind}" data-open="${x.id}">
+      ${x.cover ? `<div class="mk-cover" style="background-image:url('${esc(x.cover)}')"></div>` : `<div class="mk-cover none k-${x.kind}"><i class="fas ${k[0]}"></i></div>`}
+      <div class="mk-body">
+        <div class="mk-meta"><span class="id-kb k-${x.kind}"><i class="fas ${k[0]}"></i>${k[1]}</span>${x.featured ? '<span class="mk-feat"><i class="fas fa-star"></i>精选</span>' : ''}${x.sample ? '<span class="mk-sample" title="平台样板数据，用于展示效果">样板</span>' : ''}<span class="mk-to">→ ${esc(x.target)}</span></div>
+        <h4>${esc(x.title)}</h4><p>${esc(x.oneLiner || '')}</p>
+        ${(x.tags || []).length ? `<div class="mk-tags">${x.tags.slice(0, 3).map((t) => `<em>#${esc(t)}</em>`).join('')}</div>` : ''}
+        <div class="mk-foot"><span class="mk-by">${esc(x.nickname)}</span>${['adopted', 'done', 'replied'].includes(x.status) ? `<span class="tag ok">${st[0]}</span>` : ''}<span class="mk-score" title="AI 评分">AI ${x.eval?.total ?? '—'}</span>
+          <button class="mk-like ${x.liked ? 'on' : ''}" data-like="${x.id}" title="点赞"><i class="fas fa-heart"></i><b>${x.likes || 0}</b></button></div>
+      </div></article>`;
+  }
+  function paintTop() {
+    const s = stats, el = $('#mk-top', host), side = $('#mk-side', host); if (!s || !el) return;
+    const kn = (k) => (s.kinds || []).find((x) => x.kind === k)?.n || 0;
+    el.innerHTML = [['fa-lightbulb', s.ideas, '份献策'], ['fa-heart', s.likes, '次点赞'], ['fa-building', s.companies, '家企业入驻'], ['fa-circle-check', s.adopted, '份被采纳']].map(([i, v, l]) => `<div><i class="fas ${i}"></i><b>${v ?? 0}</b><span>${l}</span></div>`).join('');
+    if (side) side.innerHTML = `<div class="card"><div class="h4"><i class="fas fa-fire" style="color:#ef4444"></i> 最受关注的企业</div>${(s.hot || []).map((h, i) => `<div class="mk-rank" data-go="${esc(h.name)}"><b class="r${i}">${i + 1}</b><span>${esc(h.name)}</span><em>${h.n} 策</em></div>`).join('') || '<div class="hint mt">暂无</div>'}</div>
+      <div class="card mt"><div class="h4"><i class="fas fa-chart-pie" style="color:var(--c2)"></i> 献策构成</div>${KINDS.map(([k, i, n]) => { const v = kn(k), t = Math.max(1, s.ideas); return `<div class="mk-bar2"><span><i class="fas ${i}"></i>${n}</span><i><em class="k-${k}" style="width:${Math.round(v / t * 100)}%"></em></i><b>${v}</b></div>`; }).join('')}</div>
+      <button class="btn btn-warm mt" style="width:100%;justify-content:center" id="mk-new"><i class="fas fa-lightbulb"></i>我也来献一策</button>`;
+    $$('[data-go]', side || el).forEach((x) => x.onclick = () => alsoFor(x.dataset.go));
+    const nb = $('#mk-new', host); if (nb) nb.onclick = () => { D.tab = 'make'; D.mode = 'other'; save(); rerender(); };
+  }
+  function alsoFor(name) { D.tab = 'make'; D.mode = 'other'; D.q = name; D.target = null; D.res = null; D.sent = null; save(); rerender(); setTimeout(() => $('#id-find', host)?.click(), 50); }
+  async function openDetail(id) {
+    const m = openModal('<div class="hint"><i class="fas fa-spinner fa-spin"></i> 加载中…</div>');
+    try {
+      const { idea: x } = await api('/detail/' + id); const k = KN[x.kind] || KN.proposal, E = x.eval || {};
+      m.innerHTML = `<div class="flex between"><div><span class="id-kb k-${x.kind}"><i class="fas ${k[0]}"></i>${k[1]}</span>${x.sample ? ' <span class="mk-sample">样板</span>' : ''}<div class="h2 mt" style="font-size:19px">${esc(x.title)}</div><div class="hint">${esc(x.nickname)} → ${esc(x.target)} · ${esc(x.category || '')} · ${new Date(x.createdAt).toLocaleDateString('zh-CN')}</div></div><button class="close-x" data-close><i class="fas fa-xmark"></i></button></div>
+        ${x.cover ? `<img src="${esc(x.cover)}" class="mk-dimg mt" alt="设计稿">` : ''}
+        <p class="mt" style="font-size:14px;color:var(--sub)">${esc(x.oneLiner || '')}</p>
+        <div class="grid4 mt">${[['创新度', E.novelty], ['契合度', E.fit], ['可行性', E.feasibility], ['价值', E.value]].map(([n, v]) => `<div class="stat"><div class="l">${n}</div><div class="v" style="font-size:20px">${v ?? '—'}</div></div>`).join('')}</div>
+        <div class="md id-md mt">${mdRender(x.proposal || '')}</div>
+        ${x.reply ? `<div class="fb-box ok mt"><b>企业回复：</b>${esc(x.reply)}</div>` : ''}
+        <div class="flex mt"><span class="hint" style="flex:1">${x.sample ? '这是平台样板，用来展示献策长什么样；不代表企业已收到或采纳。' : '公开献策不展示提案人联系方式。'}</span><button class="btn btn-warm btn-sm" id="dt-also"><i class="fas fa-lightbulb"></i>我也给「${esc(x.target)}」献一策</button></div>`;
+      $$('[data-close]', m).forEach((b) => b.onclick = closeOverlay);
+      $('#dt-also', m).onclick = () => { closeOverlay(); alsoFor(x.target); };
+    } catch (e) { m.innerHTML = `<div class="hint">加载失败：${esc(e.message)}</div><button class="btn btn-ghost btn-sm mt" data-close>关闭</button>`; $$('[data-close]', m).forEach((b) => b.onclick = closeOverlay); }
   }
 
   // ---------------- 入口 ----------------

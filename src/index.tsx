@@ -1,8 +1,11 @@
 import { Hono } from 'hono'
 import aiRoutes from './ai'
 import ideaRoutes from './ideas'
+import svcRoutes, { serveSite } from './svc'
+import csRoutes, { widgetJs, chatPage } from './cs'
+import adminRoutes from './admin'
 
-const app = new Hono<{ Bindings: { GSK_API_KEY?: string; BRAIN_ACCESS_CODE?: string; DB?: D1Database } }>()
+const app = new Hono<{ Bindings: { GSK_API_KEY?: string; BRAIN_ACCESS_CODE?: string; DB?: D1Database; ADMIN_CODE?: string } }>()
 
 // 访问口令（可选）：设置 BRAIN_ACCESS_CODE 后，调用 AI 接口须携带 X-Brain-Code，防止他人消耗你的 Genspark 积分
 app.use('/api/ai/*', async (c, next) => {
@@ -12,6 +15,20 @@ app.use('/api/ai/*', async (c, next) => {
 })
 app.route('/api/ai', aiRoutes)
 app.route('/api/ideas', ideaRoutes)
+// 服务中心同样消耗 AI 积分：沿用访问口令
+app.use('/api/svc/*', async (c, next) => {
+  const code = c.env.BRAIN_ACCESS_CODE
+  if (code && c.req.method === 'POST' && c.req.header('X-Brain-Code') !== code) return c.json({ ok: false, error: '需要访问口令', needCode: true }, 401)
+  await next()
+})
+app.route('/api/svc', svcRoutes)
+app.route('/api/cs', csRoutes)
+app.route('/api/admin', adminRoutes)
+// 公开交付物：AI 生成的企业网站
+app.get('/s/:id', serveSite)
+// 客服 Agent：嵌入脚本 + 对话页
+app.get('/cs/widget.js', (c) => new Response(widgetJs(new URL(c.req.url).origin), { headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' } }))
+app.get('/cs/chat/:id', (c) => c.html(chatPage(c.req.param('id').replace(/[^\w-]/g, '').slice(0, 40))))
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 
@@ -130,6 +147,8 @@ app.get('/', (c) => c.html(`<!DOCTYPE html>
 <script src="/static/models.js"></script>
 <script src="/static/ideas.js"></script>
 <script src="/static/home.js"></script>
+<script src="/static/services.js"></script>
+<script src="/static/admin.js"></script>
 <script src="/static/ai.js"></script>
 <script src="/static/main.js"></script>
 </body>

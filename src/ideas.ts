@@ -10,6 +10,7 @@ const ideas = new Hono<{ Bindings: Bindings }>()
 const rid = (p: string) => `${p}_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`
 const now = () => Date.now()
 const DAY = 86400e3
+const KINDS = ['proposal', 'suggestion', 'design']
 const LIMIT = { perEmailDays: 7, perUidDay: 5, globalDay: 30 }
 const db = (c: any): D1Database => { if (!c.env.DB) throw new AiError('献策网络数据库未配置（D1 binding DB）', 503); return c.env.DB }
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string))
@@ -159,13 +160,14 @@ ideas.post('/submit', async (c) => {
       }
     }
   }
-  await D.prepare(`INSERT INTO ideas (id, uid, nickname, contact, target_name, company_id, category, title, one_liner, proposal, cover, channel, email_to, email_source, email_msg, status, reply, eval, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)`)
-    .bind(id, uid, clip(b.nickname, 30), clip(b.contact, 80), clip(T.name, 60), co?.id || null, clip(b.category, 20), title, clip(b.oneLiner, 120), proposal, clip(b.cover, 300), channel, emailTo, emailSource, emailMsg, status, JSON.stringify(b.eval || {}).slice(0, 1000), t, t).run()
+  const kind = KINDS.includes(b.kind) ? b.kind : 'proposal'
+  await D.prepare(`INSERT INTO ideas (id, uid, nickname, contact, target_name, company_id, kind, category, title, one_liner, proposal, cover, channel, email_to, email_source, email_msg, status, reply, eval, tags, listed, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)`)
+    .bind(id, uid, clip(b.nickname, 30), clip(b.contact, 80), clip(T.name, 60), co?.id || null, kind, clip(b.category, 20), title, clip(b.oneLiner, 120), proposal, clip(b.cover, 300), channel, emailTo, emailSource, emailMsg, status, JSON.stringify(b.eval || {}).slice(0, 1000), (Array.isArray(b.tags) ? b.tags : []).slice(0, 4).map((x: any) => clip(x, 12)).join(','), b.listed === false ? 0 : 1, t, t).run()
   return c.json({ ok: true, id, channel, status, company: co ? { id: co.id, name: co.name } : null, emailTo, emailMsg, view: `${origin}/api/ideas/view/${id}` })
 })
 
-const pub = (full = false) => (r: any) => ({ id: r.id, nickname: r.nickname || '匿名用户', contact: full ? r.contact : undefined, target: r.target_name, companyId: r.company_id, category: r.category, title: r.title, oneLiner: r.one_liner, proposal: full ? r.proposal : undefined, channel: r.channel, emailTo: r.email_to ? r.email_to.replace(/(.{2}).*(@.*)/, '$1***$2') : '', emailMsg: r.email_msg, status: r.status, reply: r.reply, eval: (() => { try { return JSON.parse(r.eval || '{}') } catch { return {} } })(), cmdNo: r.cmd_no, cmdScore: r.cmd_score, createdAt: r.created_at, updatedAt: r.updated_at })
+const pub = (full = false) => (r: any) => ({ id: r.id, nickname: r.nickname || '匿名用户', contact: full ? r.contact : undefined, target: r.target_name, companyId: r.company_id, category: r.category, title: r.title, oneLiner: r.one_liner, proposal: full ? r.proposal : undefined, channel: r.channel, emailTo: r.email_to ? r.email_to.replace(/(.{2}).*(@.*)/, '$1***$2') : '', emailMsg: r.email_msg, status: r.status, reply: r.reply, eval: (() => { try { return JSON.parse(r.eval || '{}') } catch { return {} } })(), cmdNo: r.cmd_no, cmdScore: r.cmd_score, kind: r.kind || 'proposal', likes: r.likes || 0, featured: !!r.featured, sample: !!r.sample, listed: r.listed !== 0, tags: String(r.tags || '').split(',').filter(Boolean), createdAt: r.created_at, updatedAt: r.updated_at })
 
 ideas.get('/mine', async (c) => {
   const uid = clip(c.req.query('uid'), 40); if (!uid) return c.json({ ok: true, ideas: [] })
@@ -175,19 +177,54 @@ ideas.get('/mine', async (c) => {
 ideas.get('/stats', async (c) => {
   const D = db(c)
   const [a, b2, e, r] = await Promise.all([
-    D.prepare('SELECT COUNT(*) AS n FROM ideas').first<any>(),
+    D.prepare('SELECT COUNT(*) AS n FROM ideas WHERE hidden = 0').first<any>(),
     D.prepare('SELECT COUNT(*) AS n FROM companies').first<any>(),
     D.prepare("SELECT COUNT(*) AS n FROM ideas WHERE status = 'adopted' OR status = 'done'").first<any>(),
-    D.prepare('SELECT target_name, title, category, status, nickname, created_at FROM ideas ORDER BY created_at DESC LIMIT 12').all<any>(),
+    D.prepare('SELECT target_name, title, category, status, nickname, created_at FROM ideas WHERE hidden = 0 AND listed = 1 ORDER BY created_at DESC LIMIT 12').all<any>(),
   ])
-  const top = await D.prepare('SELECT target_name AS name, COUNT(*) AS n FROM ideas GROUP BY target_name ORDER BY n DESC LIMIT 8').all<any>()
-  return c.json({ ok: true, ideas: a?.n || 0, companies: b2?.n || 0, adopted: e?.n || 0, recent: (r.results || []).map((x: any) => ({ target: x.target_name, title: x.title, category: x.category, status: x.status, nickname: x.nickname || '匿名用户', at: x.created_at })), hot: top.results || [] })
+  const top = await D.prepare('SELECT target_name AS name, COUNT(*) AS n, SUM(likes) AS likes FROM ideas WHERE hidden = 0 AND listed = 1 GROUP BY target_name ORDER BY n DESC, likes DESC LIMIT 8').all<any>()
+  const kinds = await D.prepare('SELECT kind, COUNT(*) AS n FROM ideas WHERE hidden = 0 GROUP BY kind').all<any>()
+  const likes = await D.prepare('SELECT COUNT(*) AS n FROM idea_likes').first<any>()
+  return c.json({ ok: true, ideas: a?.n || 0, companies: b2?.n || 0, adopted: e?.n || 0, recent: (r.results || []).map((x: any) => ({ target: x.target_name, title: x.title, category: x.category, status: x.status, nickname: x.nickname || '匿名用户', at: x.created_at })), hot: top.results || [], kinds: kinds.results || [], likes: likes?.n || 0 })
+})
+
+// ---------- 献策市场：公开列表（热门 / 最新 / 精选 / 已采纳）+ 点赞 ----------
+ideas.get('/market', async (c) => {
+  const kind = c.req.query('kind') || '', sort = c.req.query('sort') || 'hot', q = clip(c.req.query('q'), 30), cat = clip(c.req.query('cat'), 20), uid = clip(c.req.query('uid'), 40)
+  const where = ['hidden = 0', 'listed = 1'], v: any[] = []
+  if (KINDS.includes(kind)) { where.push('kind = ?'); v.push(kind) }
+  if (cat) { where.push('category = ?'); v.push(cat) }
+  if (q) { where.push('(title LIKE ? OR target_name LIKE ? OR one_liner LIKE ?)'); v.push(`%${q}%`, `%${q}%`, `%${q}%`) }
+  if (sort === 'featured') where.push('featured = 1')
+  if (sort === 'adopted') where.push("status IN ('adopted','done','replied')")
+  // 热度：点赞 ×3 + 精选 20 + 已采纳 15 + 时间衰减（每天 -1）
+  const order = sort === 'new' ? 'created_at DESC' : `(likes * 3 + featured * 20 + (CASE WHEN status IN ('adopted','done') THEN 15 ELSE 0 END) - (${now()} - created_at) / 86400000.0) DESC`
+  const { results } = await db(c).prepare(`SELECT * FROM ideas WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT 60`).bind(...v).all<any>()
+  const rows = (results || []).map(pub(false))
+  let liked: string[] = []
+  if (uid && rows.length) { const { results: lk } = await db(c).prepare(`SELECT idea_id FROM idea_likes WHERE uid = ? AND idea_id IN (${rows.map(() => '?').join(',')})`).bind(uid, ...rows.map((r) => r.id)).all<any>(); liked = (lk || []).map((x: any) => x.idea_id) }
+  return c.json({ ok: true, ideas: rows.map((r) => ({ ...r, liked: liked.includes(r.id) })) })
+})
+ideas.get('/detail/:id', async (c) => {
+  const r = await db(c).prepare('SELECT * FROM ideas WHERE id = ? AND hidden = 0 AND listed = 1').bind(clip(c.req.param('id'), 40)).first<any>()
+  if (!r) throw new AiError('献策不存在或未公开', 404)
+  const x = pub(true)(r); delete (x as any).contact
+  return c.json({ ok: true, idea: x })
+})
+ideas.post('/like', async (c) => {
+  const b = await c.req.json<any>(); const uid = clip(b.uid, 40), id = clip(b.id, 40); if (!uid || !id) throw new AiError('参数缺失', 400)
+  const D = db(c)
+  const ex = await D.prepare('SELECT 1 AS x FROM idea_likes WHERE idea_id = ? AND uid = ?').bind(id, uid).first<any>()
+  if (ex) await D.batch([D.prepare('DELETE FROM idea_likes WHERE idea_id = ? AND uid = ?').bind(id, uid), D.prepare('UPDATE ideas SET likes = MAX(0, likes - 1) WHERE id = ?').bind(id)])
+  else await D.batch([D.prepare('INSERT INTO idea_likes (idea_id, uid, at) VALUES (?, ?, ?)').bind(id, uid, now()), D.prepare('UPDATE ideas SET likes = likes + 1 WHERE id = ?').bind(id)])
+  const r = await D.prepare('SELECT likes FROM ideas WHERE id = ?').bind(id).first<any>()
+  return c.json({ ok: true, liked: !ex, likes: r?.likes || 0 })
 })
 
 // ---------- 公开页：在线查看 / 退订 ----------
 const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head><body style="margin:0;background:#f4f6fb;padding:24px 12px"><div style="max-width:680px;margin:0 auto 14px;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif"><a href="/" style="display:inline-block;padding:8px 14px;border-radius:20px;background:#fff;border:1px solid #e2e8f0;color:#2563eb;text-decoration:none;font-size:13px">← 返回智导主页</a></div>${body}</body></html>`
 ideas.get('/view/:id', async (c) => {
-  const r = await db(c).prepare('SELECT * FROM ideas WHERE id = ?').bind(clip(c.req.param('id'), 40)).first<any>()
+  const r = await db(c).prepare('SELECT * FROM ideas WHERE id = ? AND hidden = 0').bind(clip(c.req.param('id'), 40)).first<any>()
   if (!r) return c.html(page('献策不存在', '<p style="text-align:center">该献策不存在或已删除</p>'), 404)
   const ev = (() => { try { return JSON.parse(r.eval || '{}') } catch { return {} } })()
   return c.html(page(r.title, emailHtml({ origin: new URL(c.req.url).origin, id: r.id, target: r.target_name, nickname: r.nickname, contact: '', title: r.title, oneLiner: r.one_liner, opening: '', proposal: r.proposal, ev })))

@@ -541,9 +541,17 @@ ai.post('/idea/target', async (c) => {
 ai.post('/idea/write', async (c) => {
   const b = await c.req.json<any>()
   const T = b.target || {}
+  const kind = ['suggestion', 'design'].includes(b.kind) ? b.kind : 'proposal'
+  const short = clip(T.short || T.name, 12)
+  const SPEC: Record<string, { role: string; body: string; extra: string }> = {
+    proposal: { role: '顶级策划人', body: `Markdown 策划案，900-1600字，章节固定为：## 一句话提案 / ## 为什么是${short}、为什么是现在 / ## 创意方案 / ## 落地三步走 / ## 预期价值（估算） / ## 风险与应对 / ## 需要企业提供的资源`, extra: '' },
+    suggestion: { role: '资深用户体验与经营顾问', body: 'Markdown 改进建议，350-700字，章节固定为：## 我发现的问题 / ## 具体建议（编号列出，每条可执行） / ## 预期效果（估算） / ## 低成本试点办法', extra: '' },
+    design: { role: '顶级品牌与产品设计师', body: `Markdown 设计思路，600-1100字，章节固定为：## 设计概念 / ## 视觉方向（配色 HEX、字体气质、图形语言） / ## 关键画面与版式 / ## 应用场景（海报 / 包装 / 界面 / 门店等） / ## 与${short}品牌的契合点 / ## 落地建议`, extra: ',"visualPrompt":"给 AI 出图模型的英文画面描述，60-120 词，具体到构图、主体、配色、光线、风格，不含任何文字"' },
+  }
+  const sp = SPEC[kind]
   const who = b.self ? `提案对象是提案人自己经营的企业「${clip(T.name, 40)}」，提案人就是老板本人。方案要能直接交给公司的 AI 智脑执行。` : `提案人是一位普通用户（外部人士），要把点子献给「${clip(T.name, 40)}」。语气真诚、专业、尊重，不夸大、不贬低企业、不涉及企业内部机密，也不承诺对方一定会受益。`
   const out = await llm(c.env,
-    `你是顶级策划人 + ${clip(T.industry || '该行业', 30)}行业专家，擅长把一个粗糙的想法打磨成企业愿意认真看的策划案。
+    `你是${sp.role} + ${clip(T.industry || '该行业', 30)}行业专家，擅长把一个粗糙的想法打磨成企业愿意认真看的${kind === 'design' ? '设计提案' : kind === 'suggestion' ? '改进建议' : '策划案'}。
 原则：
 1. 尊重并保留提案人的核心想法，不偷换主题，只做补全、专业化与落地化。
 2. 结合目标企业的真实业务、产品和痛点，讲清「为什么是这家企业、为什么是现在」。
@@ -551,11 +559,11 @@ ai.post('/idea/write', async (c) => {
 4. 数字一律标注「估算」并写口径；不得捏造企业数据。
 5. ${who}
 输出 JSON（proposal 字段为 Markdown 字符串，换行用 \\n）。`,
-    `【目标企业画像】\n名称：${clip(T.name, 60)}（${clip(T.industry, 40)}）\n主营：${clip(T.business, 120)}\n代表产品：${lines(T.products, 5, 20).join('、')}\n近期动态：${lines(T.recent, 3, 80).join('；')}\n核心用户：${clip(T.audience, 60)}\n痛点：${lines(T.pains, 4, 70).join('；')}\n\n【点子类型】${clip(b.category, 20) || '不限'}\n【提案人的原始想法】\n${clip(b.idea, 1500)}${b.feedback ? `\n\n【提案人对上一版的修改意见——必须照改】\n${clip(b.feedback, 500)}\n【上一版】\n${clip(b.previous, 3000)}` : ''}\n\n输出 JSON：{"title":"提案标题，≤24字，有记忆点","oneLiner":"一句话说清这个点子，≤50字","tags":["关键词，3-4个"],"proposal":"Markdown 策划案，900-1600字，章节固定为：## 一句话提案 / ## 为什么是${clip(T.short || T.name, 12)}、为什么是现在 / ## 创意方案 / ## 落地三步走 / ## 预期价值（估算） / ## 风险与应对 / ## 需要企业提供的资源","eval":{"novelty":0-100,"fit":0-100,"feasibility":0-100,"value":0-100,"comment":"客观点评，≤60字","improve":["还能更好的地方，2-3条，每条≤30字"]},"email":{"subject":"邮件标题，≤36字，像真人写的","opening":"邮件开场白，2-3句，≤120字，说明自己是谁、为什么写这封信"}}`,
+    `【目标企业画像】\n名称：${clip(T.name, 60)}（${clip(T.industry, 40)}）\n主营：${clip(T.business, 120)}\n代表产品：${lines(T.products, 5, 20).join('、')}\n近期动态：${lines(T.recent, 3, 80).join('；')}\n核心用户：${clip(T.audience, 60)}\n痛点：${lines(T.pains, 4, 70).join('；')}\n\n【点子类型】${clip(b.category, 20) || '不限'}\n【提案人的原始想法】\n${clip(b.idea, 1500)}${b.feedback ? `\n\n【提案人对上一版的修改意见——必须照改】\n${clip(b.feedback, 500)}\n【上一版】\n${clip(b.previous, 3000)}` : ''}\n\n输出 JSON：{"title":"提案标题，≤24字，有记忆点","oneLiner":"一句话说清这个点子，≤50字","tags":["关键词，3-4个"],"proposal":"${sp.body}"${sp.extra},"eval":{"novelty":0-100,"fit":0-100,"feasibility":0-100,"value":0-100,"comment":"客观点评，≤60字","improve":["还能更好的地方，2-3条，每条≤30字"]},"email":{"subject":"邮件标题，≤36字，像真人写的","opening":"邮件开场白，2-3句，≤120字，说明自己是谁、为什么写这封信"}}`,
     { model: eng(b, c.env), effort: eff(b), json: true })
   const sc = (k: string) => Math.max(0, Math.min(100, Math.round(+out.eval?.[k] || 0)))
   const ev = { novelty: sc('novelty'), fit: sc('fit'), feasibility: sc('feasibility'), value: sc('value'), comment: clip(out.eval?.comment, 120), improve: lines(out.eval?.improve, 3, 60) }
-  return c.json({ ok: true, model: eng(b, c.env), title: clip(out.title, 40), oneLiner: clip(out.oneLiner, 100), tags: lines(out.tags, 4, 12), proposal: clip(out.proposal, 6000), eval: { ...ev, total: Math.round(ev.novelty * .25 + ev.fit * .25 + ev.feasibility * .25 + ev.value * .25) }, email: { subject: clip(out.email?.subject, 60), opening: clip(out.email?.opening, 240) } })
+  return c.json({ ok: true, model: eng(b, c.env), title: clip(out.title, 40), oneLiner: clip(out.oneLiner, 100), tags: lines(out.tags, 4, 12), proposal: clip(out.proposal, 6000), eval: { ...ev, total: Math.round(ev.novelty * .25 + ev.fit * .25 + ev.feasibility * .25 + ev.value * .25) }, email: { subject: clip(out.email?.subject, 60), opening: clip(out.email?.opening, 240) }, kind, visualPrompt: clip(out.visualPrompt, 900) })
 })
 
 // ---------- ⑥ 简历解析 ----------
