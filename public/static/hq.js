@@ -48,12 +48,12 @@
     $('#app').innerHTML = `
     <div class="hq">
       <header class="hq-top">
-        <div class="logo"><div class="orb"><i class="fas fa-brain"></i></div><div style="line-height:1.2">${esc(S.company.name)}<div class="dim" style="font-size:11px;font-weight:400"><i class="fas ${S.industry?.icon}"></i> ${esc(S.industry?.div?.name || '')} · 企业智脑</div></div></div>
+        <div class="logo" id="hq-logo" style="cursor:pointer" title="返回主页"><div class="orb"><i class="fas fa-brain"></i></div><div style="line-height:1.2">${esc(S.company.name)}<div class="dim" style="font-size:11px;font-weight:400"><i class="fas ${S.industry?.icon}"></i> ${esc(S.industry?.div?.name || '')} · 企业智脑</div></div></div>
         <div class="clock"><i class="fas fa-clock" style="font-size:14px"></i><span id="clk"></span></div>
         <div class="speed" id="speed">${[0, 1, 3, 8].map((v) => `<button data-v="${v}" class="${S.sim.speed === v ? 'on' : ''}">${v === 0 ? '<i class="fas fa-pause"></i>' : v + 'x'}</button>`).join('')}</div>
         <div class="kpis" id="kpis"></div>
       </header>
-      <nav class="hq-nav">${NAV.map((n) => `<button class="nav-btn ${view === n.k ? 'on' : ''}" data-k="${n.k}"><i class="fas ${n.i}"></i>${n.n}<span class="badge" id="badge-${n.k}" style="display:none"></span></button>`).join('')}
+      <nav class="hq-nav"><button class="nav-btn nav-home" id="nav-home" title="返回主页"><i class="fas fa-house"></i>主页</button>${NAV.map((n) => `<button class="nav-btn ${view === n.k ? 'on' : ''}" data-k="${n.k}"><i class="fas ${n.i}"></i>${n.n}<span class="badge" id="badge-${n.k}" style="display:none"></span></button>`).join('')}
         <div style="flex:1"></div><button class="nav-btn" id="nav-reset" title="重新创建企业"><i class="fas fa-rotate-left"></i>重建</button></nav>
       <main class="hq-main" id="hq-main"></main>
       <aside class="hq-side">
@@ -75,6 +75,7 @@
     </div>`;
     $$('.nav-btn[data-k]').forEach((b) => b.onclick = () => gotoView(b.dataset.k));
     $$('#speed button').forEach((b) => b.onclick = () => { S.sim.speed = +b.dataset.v; $$('#speed button').forEach((x) => x.classList.toggle('on', x === b)); saveState(); });
+    $('#nav-home').onclick = $('#hq-logo').onclick = () => window.goHome && goHome();
     $('#nav-reset').onclick = () => { if (confirm('确定重新创建企业？当前企业数据将清空。')) { stopSim(); resetState(); renderApp(); } };
     const go = () => { const v = $('#cmd').value.trim(); if (!v) return toast('请输入指令'); const r = $('#cmd-routine').checked; $('#cmd').value = ''; $('#cmd-routine').checked = false; window.bossCommand(v, { routine: r }); };
     $('#cmd-go').onclick = go;

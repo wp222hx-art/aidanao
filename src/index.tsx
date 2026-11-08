@@ -129,6 +129,7 @@ app.get('/', (c) => c.html(`<!DOCTYPE html>
 <script src="/static/masters.js"></script>
 <script src="/static/models.js"></script>
 <script src="/static/ideas.js"></script>
+<script src="/static/home.js"></script>
 <script src="/static/ai.js"></script>
 <script src="/static/main.js"></script>
 </body>

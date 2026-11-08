@@ -2,6 +2,7 @@
 window.renderApp = function () {
   if (window.stopSim) stopSim();
   closeOverlay();
+  if (appRoute() === 'home') return renderHome();
   if (S.launched && S.depts.length) renderHQ(); else renderWizard();
 };
 document.addEventListener('DOMContentLoaded', async () => {

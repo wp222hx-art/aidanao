@@ -31,13 +31,14 @@
 
   // ---------- 连接状态胶囊 ----------
   function pillHtml() {
-    if (AI.on) return `<div class="ai-pill on" title="${esc(AI.user?.email || '')} · 模型 ${esc(AI.model)}"><span class="pulse"></span><b>Genspark 已授权</b><span class="dim">${esc((AI.user?.plan || '').toUpperCase())} · 积分 ${Math.round(AI.user?.credits || 0).toLocaleString()}</span></div>`;
-    return `<div class="ai-pill off" title="${esc(AI.reason)}"><span class="pulse"></span><b>仿真模式</b><span class="dim">${esc(AI.reason || '未连接 Genspark')}</span></div>`;
+    if (AI.on) return `<div class="ai-pill on" title="AI 已连接 · 模型 ${esc(AI.model)}"><span class="pulse"></span><b>积分 ${Math.round(AI.user?.credits || 0).toLocaleString()}</b></div>`;
+    return `<div class="ai-pill off" title="${esc(AI.reason)}"><span class="pulse"></span><b>仿真模式</b><span class="dim">${esc(AI.reason || 'AI 未连接')}</span></div>`;
   }
   function renderPill() {
     $$('.ai-pill').forEach((e) => e.remove());
     const w = $('.wiz-top #btn-demo'); if (w) w.insertAdjacentHTML('beforebegin', pillHtml());
     const h = $('.hq-top .kpis'); if (h) h.insertAdjacentHTML('beforebegin', pillHtml());
+    const hm = $('#home-pill'); if (hm) hm.innerHTML = pillHtml();
   }
   AI.refreshCredits = async () => { try { const r = await fetch('/api/ai/status').then((x) => x.json()); if (r.connected) { AI.user = r.user; renderPill(); } } catch { } };
 
@@ -217,6 +218,7 @@
   }
 
   // ---------- 挂载：包装渲染函数以插入状态胶囊、安装指令接管 ----------
+  const _rhm = window.renderHome; if (_rhm) window.renderHome = function () { _rhm.apply(this, arguments); renderPill(); };
   const _rw = window.renderWizard; window.renderWizard = function () { _rw.apply(this, arguments); renderPill(); };
   const _rh = window.renderHQ; window.renderHQ = function () {
     _rh.apply(this, arguments); renderPill();

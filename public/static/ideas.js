@@ -26,10 +26,11 @@
     host = p;
     const tabs = [['make', 'fa-lightbulb', '献策工作台'], ['mine', 'fa-paper-plane', '我的献策'], ['inbox', 'fa-inbox', '企业收件箱'], ['square', 'fa-fire', '献策广场']];
     p.innerHTML = `<div class="page-hd"><div class="ic" style="background:linear-gradient(135deg,#f59e0b,#ec4899)"><i class="fas fa-lightbulb"></i></div><div><div class="h2">智导 · 献策网络</div><div class="hint">人人都能给企业出主意：AI 帮你把一个念头写成专业策划案，并送到企业手里 —— 已入驻的直达企业收件箱，未入驻的按公开邮箱代发</div></div>
-      ${p.dataset.overlay ? '<button class="close-x" id="id-close" style="margin-left:auto"><i class="fas fa-xmark"></i></button>' : ''}</div>
+      <div class="flex" style="margin-left:auto;gap:8px"><button class="btn btn-ghost btn-sm" id="id-home"><i class="fas fa-house"></i>返回主页</button>${p.dataset.overlay ? '<button class="close-x" id="id-close" style="margin-left:0" title="关闭"><i class="fas fa-xmark"></i></button>' : ''}</div></div>
       <div class="id-tabs">${tabs.map(([k, i, n]) => `<button class="${D.tab === k ? 'on' : ''}" data-tab="${k}"><i class="fas ${i}"></i>${n}</button>`).join('')}</div>
       <div id="id-body" class="mt"></div>`;
     $$('[data-tab]', p).forEach((b) => b.onclick = () => { D.tab = b.dataset.tab; if (D.tab === 'inbox') inbox = null; if (D.tab === 'mine') mine = null; if (D.tab === 'square') stats = null; save(); render(p); });
+    $('#id-home', p).onclick = () => goHome();
     const cx = $('#id-close', p); if (cx) cx.onclick = () => { p.closest('.ideas-overlay')?.remove(); history.replaceState(null, '', location.pathname); };
     const body = $('#id-body', p);
     ({ make, mine: mineTab, inbox: inboxTab, square })[D.tab](body);
@@ -40,8 +41,8 @@
     const T = D.target, R = D.res;
     const step = (n, title, inner, on) => `<section class="id-step ${on ? 'on' : 'off'}"><div class="id-n">${n}</div><div class="id-sc"><h3>${title}</h3>${on ? inner : ''}</div></section>`;
     const modeHtml = `<div class="id-modes">
-      <button class="id-mode ${D.mode === 'self' ? 'on' : ''}" data-mode="self"><i class="fas fa-building-circle-check"></i><b>为我的企业出主意</b><small>用你自己的想法解决自己企业的问题 —— 写成策划案后，一键交给企业智脑：深度研究 → 3 套方案 → 可行性校验 → 部门执行</small></button>
-      <button class="id-mode ${D.mode === 'other' ? 'on' : ''}" data-mode="other"><i class="fas fa-paper-plane"></i><b>向指定企业献策</b><small>想给米哈游、小米、瑞幸……出个好点子？选企业 → 写想法 → AI 成稿 → 送达（已入驻直推收件箱，未入驻按公开邮箱代发）</small></button></div>`;
+      <button class="id-mode dir-a ${D.mode === 'self' ? 'on' : ''}" data-mode="self"><span class="id-dir">方向 A</span><i class="fas fa-building-circle-check"></i><b>为我的企业出主意</b><small>用你自己的想法解决自己企业的问题 —— 写成策划案后，一键交给企业智脑：深度研究 → 3 套方案 → 可行性校验 → 部门执行</small></button>
+      <button class="id-mode dir-b ${D.mode === 'other' ? 'on' : ''}" data-mode="other"><span class="id-dir">方向 B</span><i class="fas fa-paper-plane"></i><b>向指定企业献策</b><small>想给米哈游、小米、瑞幸……出个好点子？选企业 → 写想法 → AI 成稿 → 送达（已入驻直推收件箱，未入驻按公开邮箱代发）</small></button></div>`;
     let tgt = '';
     if (D.mode === 'self') {
       tgt = S.launched && S.company?.name ? targetCard(selfTarget()) : `<div class="cmd-alert"><i class="fas fa-circle-info"></i> 还没有创建你的企业。先在向导里创建企业智脑，再回来为它出主意。<button class="btn btn-pri btn-sm" id="id-gowiz">去创建企业</button></div>`;
@@ -124,7 +125,7 @@
     const on = (sel, fn, ev = 'onclick') => { const el = $(sel, b); if (el) el[ev] = fn; };
     $$('[data-mode]', b).forEach((x) => x.onclick = () => { if (D.mode !== x.dataset.mode) { D.mode = x.dataset.mode; D.res = null; D.sent = null; } save(); rerender(); });
     $$('[data-tab2]', b).forEach((x) => x.onclick = () => { D.tab = x.dataset.tab2; save(); rerender(); });
-    on('#id-gowiz', () => { if (window.gotoView && S.launched) gotoView('flow'); else { $('.ideas-overlay')?.remove(); } });
+    on('#id-gowiz', () => enterBrain());
     const find = async () => {
       const q = ($('#id-q', b)?.value || '').trim(); if (!q) return toast('请输入企业名称');
       if (!ai()) return toast('需要连接 Genspark 才能识别企业');
@@ -165,8 +166,9 @@
     });
     on('#id-run', () => {
       if (!S.launched || !window.Flow) return toast('请先创建企业智脑');
+      if (!S.sim) enterBrain();
       const c = Flow.issue(`落地创意提案：${D.res.title}`, { idea: `# ${D.res.title}\n${D.res.oneLiner}\n\n${D.res.proposal}`, ideaBy: '老板本人' });
-      if (c) { toast(`已作为指令 #${c.no} 交给智脑：先做深度研究验证你的创意`, 'fa-rocket'); D.res = null; D.idea = ''; save(); $('.ideas-overlay')?.remove(); gotoView('flow'); }
+      if (c) { toast(`已作为指令 #${c.no} 交给智脑：先做深度研究验证你的创意`, 'fa-rocket'); D.res = null; D.idea = ''; save(); enterBrain('flow'); }
     });
   }
   const keep = (b) => { const v = (s) => $(s, b)?.value; if (v('#id-idea') != null) D.idea = v('#id-idea'); if (v('#id-nick') != null) D.nick = v('#id-nick'); if (v('#id-contact') != null) D.contact = v('#id-contact'); if (v('#id-fb') != null) D.fb = v('#id-fb'); };
@@ -220,8 +222,9 @@
         if (act === 'reply') { const v = prompt('回复提案人：', '感谢你的创意！我们已认真阅读，'); if (!v) return; await upd({ reply: v, status: x.status === 'adopted' || x.status === 'done' ? x.status : 'replied' }); }
         else if (act === 'run') {
           if (!S.launched || !window.Flow) return toast('请先创建企业智脑');
+          if (!S.sim) { enterBrain(); $('.ideas-overlay') || openIdeas(null, 'inbox'); }
           const c = Flow.issue(`落地用户献策：${x.title}`, { idea: `# ${x.title}\n${x.oneLiner || ''}\n\n${x.proposal}`, ideaBy: `用户「${x.nickname}」`, ideaRef: x.id });
-          if (!c) return; await upd({ status: 'adopted', cmdNo: c.no }); toast(`已采纳并作为指令 #${c.no} 交给智脑`, 'fa-rocket');
+          if (!c) return; await upd({ status: 'adopted', cmdNo: c.no }); toast(`已采纳并作为指令 #${c.no} 交给智脑`, 'fa-rocket'); enterBrain('flow');
         } else await upd({ status: act });
         inbox = null; rerender();
       } catch (e) { toast(e.message, 'fa-triangle-exclamation'); }

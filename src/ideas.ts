@@ -185,7 +185,7 @@ ideas.get('/stats', async (c) => {
 })
 
 // ---------- 公开页：在线查看 / 退订 ----------
-const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head><body style="margin:0;background:#f4f6fb;padding:24px 12px">${body}</body></html>`
+const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head><body style="margin:0;background:#f4f6fb;padding:24px 12px"><div style="max-width:680px;margin:0 auto 14px;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif"><a href="/" style="display:inline-block;padding:8px 14px;border-radius:20px;background:#fff;border:1px solid #e2e8f0;color:#2563eb;text-decoration:none;font-size:13px">← 返回智导主页</a></div>${body}</body></html>`
 ideas.get('/view/:id', async (c) => {
   const r = await db(c).prepare('SELECT * FROM ideas WHERE id = ?').bind(clip(c.req.param('id'), 40)).first<any>()
   if (!r) return c.html(page('献策不存在', '<p style="text-align:center">该献策不存在或已删除</p>'), 404)
