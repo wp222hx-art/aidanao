@@ -19,61 +19,58 @@
   let stats = null;
   window.renderHome = function () {
     const has = S.launched && S.depts?.length, co = S.company?.name || '';
+    const step = (i, t) => `<div class="hx-step"><i class="fas ${i}"></i><span>${t}</span></div>`;
+    const arrow = '<i class="fas fa-chevron-right hx-arr"></i>';
     $('#app').innerHTML = `
     <div class="home">
       <header class="home-top">
         <div class="logo"><div class="orb"><i class="fas fa-brain"></i></div><div>智导<div class="dim" style="font-size:11px;font-weight:400">企业智脑 × 献策网络</div></div></div>
-        <div id="home-pill"></div>
+        <div class="hx-top-r"><button class="hx-wallet" id="hx-wallet"><i class="fas fa-coins"></i>我的智点 <b id="hx-bal">0</b></button><div id="home-pill"></div></div>
       </header>
       <main class="home-main">
-        <section class="home-hero">
-          <h1>选一个方向，<span class="grad-txt">让 AI 替你把事做成</span></h1>
-          <p>经营自己的企业，或者给任何一家企业出个好主意，都从这里开始</p>
+        <section class="home-hero hx-hero">
+          <h1>用 AI 经营企业，<span class="grad-txt">用点子赚智点</span></h1>
+          <p>老板在这里指挥 AI 干活；人人都能给企业出主意，被采纳就有奖励</p>
+          <div class="hx-ctas">
+            <button class="hx-cta a" id="hx-boss"><i class="fas fa-building"></i><span><b>我是老板</b><small>让 AI 帮我经营企业</small></span></button>
+            <button class="hx-cta b" id="hx-idea"><i class="fas fa-lightbulb"></i><span><b>我有点子</b><small>给企业献策赚智点</small></span></button>
+          </div>
+          <div class="hx-proof" id="home-stats"></div>
         </section>
-        <section class="home-dirs">
+
+        <section class="home-dirs hx-dirs">
           <article class="home-dir dir-a" id="dir-a">
-            <div class="dir-tag">方向 A</div>
-            <div class="dir-ic"><i class="fas fa-building-circle-check"></i></div>
-            <h2>经营我的企业</h2>
-            <p class="dir-sub">老板的 AI 指挥舱：下达一句话指令 → 深度研究 → 3 套方案 → 可行性校验 → 你拍板 → 各部门 AI 大师执行，最后交付 Word / Excel / PPT</p>
-            <ul>
-              <li><i class="fas fa-check"></i>数字孪生企业，99+ 个 Agent 分部门上岗</li>
-              <li><i class="fas fa-check"></i><b>用我自己的想法</b>解决企业问题，AI 写成策划案后直接交给智脑执行</li>
-              <li><i class="fas fa-check"></i>服务中心：数据雷达、热点视频、贸易数据、政务办事、官网 / 海报 / 视频、7×24 客服</li>
-              <li><i class="fas fa-check"></i>企业入驻后，用户写给你的点子直接进收件箱</li>
-            </ul>
+            <div class="hx-dh"><div class="dir-ic"><i class="fas fa-building-circle-check"></i></div><div><h2>经营我的企业</h2><p>一句话下指令，AI 部门替你干完</p></div></div>
+            <div class="hx-steps">${step('fa-comment', '说一句指令')}${arrow}${step('fa-list-check', 'AI 出 3 套方案')}${arrow}${step('fa-user-check', '你拍板')}${arrow}${step('fa-file-export', '交付文档')}</div>
             <div class="dir-acts">
-              ${has ? `<button class="btn btn-pri" id="a-enter"><i class="fas fa-arrow-right-to-bracket"></i>进入「${esc(co.length > 14 ? co.slice(0, 14) + '…' : co)}」</button>
-                <button class="btn btn-ghost" id="a-idea"><i class="fas fa-lightbulb"></i>用我的想法</button>
-                <button class="btn btn-ghost" id="a-inbox"><i class="fas fa-inbox"></i>企业收件箱</button>
-                <button class="btn btn-ghost" id="a-svc"><i class="fas fa-layer-group"></i>服务中心</button>`
-              : `<button class="btn btn-pri" id="a-create"><i class="fas fa-wand-magic-sparkles"></i>${S.step > 1 ? '继续创建企业智脑' : '创建企业智脑'}</button>
-                <button class="btn btn-ghost" id="a-demo"><i class="fas fa-play"></i>体验演示企业</button>`}
+              ${has ? `<button class="btn btn-pri" id="a-enter"><i class="fas fa-arrow-right-to-bracket"></i>进入「${esc(co.length > 12 ? co.slice(0, 12) + '…' : co)}」</button>
+                <span class="hx-links"><a id="a-idea">用我的想法</a><a id="a-inbox">企业收件箱</a><a id="a-svc">服务中心</a></span>`
+              : `<button class="btn btn-pri" id="a-create"><i class="fas fa-wand-magic-sparkles"></i>${S.step > 1 ? '继续创建' : '免费创建企业智脑'}</button>
+                <span class="hx-links"><a id="a-demo"><i class="fas fa-play"></i> 先看演示</a></span>`}
             </div>
           </article>
           <article class="home-dir dir-b" id="dir-b">
-            <div class="dir-tag">方向 B</div>
-            <div class="dir-ic"><i class="fas fa-paper-plane"></i></div>
-            <h2>给企业献策</h2>
-            <p class="dir-sub">人人都能给大公司出主意：选企业（如米哈游）→ 写下你的想法 → AI 写成专业策划案并打分 → 送到企业手里。<b>不用创建企业也能用</b></p>
-            <ul>
-              <li><i class="fas fa-check"></i>企业已入驻：直推企业收件箱</li>
-              <li><i class="fas fa-check"></i>未入驻但找到公开邮箱：经你确认后代发邮件</li>
-              <li><i class="fas fa-check"></i>企业的处理状态实时回到「我的献策」</li>
-            </ul>
+            <div class="hx-dh"><div class="dir-ic"><i class="fas fa-paper-plane"></i></div><div><h2>给企业献策</h2><p>不用懂策划，AI 帮你写成方案</p></div></div>
+            <div class="hx-steps">${step('fa-building', '选一家企业')}${arrow}${step('fa-pen', '说出你的想法')}${arrow}${step('fa-wand-magic-sparkles', 'AI 写成方案')}${arrow}${step('fa-inbox', '送到企业')}</div>
             <div class="dir-acts">
               <button class="btn btn-warm" id="b-go"><i class="fas fa-lightbulb"></i>开始献策</button>
-              <button class="btn btn-ghost" id="b-mine"><i class="fas fa-paper-plane"></i>我的献策</button>
-              <button class="btn btn-ghost" id="b-square"><i class="fas fa-fire"></i>献策广场</button>
+              <span class="hx-links"><a id="b-mine">我的献策</a><a id="b-square">献策广场</a></span>
             </div>
           </article>
         </section>
-        <section class="home-bridge" id="home-bridge">
-          <div class="hb-l"><span class="hb-tag"><i class="fas fa-handshake"></i> 撮合中心</span><h3>A 出题 · B 解题 · 同行复用</h3><p>企业发布悬赏征集令，用户用 AI 写方案应征；被采纳拿智点，落地验收再加奖；企业把验证过的方案脱敏共享给同行，被使用就有分成</p></div>
-          <div class="hb-flow"><div><i class="fas fa-bullhorn"></i><b id="hb-ch">—</b><small>悬赏征集中</small></div><span><i class="fas fa-arrow-right"></i></span><div><i class="fas fa-coins"></i><b id="hb-pool">—</b><small>智点悬赏池</small></div><span><i class="fas fa-arrow-right"></i></span><div><i class="fas fa-book-open"></i><b id="hb-so">—</b><small>同行方案</small></div></div>
-          <div class="hb-acts"><button class="btn btn-pri" id="hb-go"><i class="fas fa-trophy"></i>去应征赚智点</button><button class="btn btn-ghost" id="hb-so-btn"><i class="fas fa-book-open"></i>同行方案库</button><button class="btn btn-ghost" id="hb-rank"><i class="fas fa-ranking-star"></i>排行榜</button></div>
+
+        <section class="home-bridge hx-earn" id="home-bridge">
+          <div class="hx-eh">
+            <div><h3><i class="fas fa-coins"></i> 怎么赚智点</h3><p>悬赏中 <b id="hb-ch">—</b> 个征集令 · 奖池 <b id="hb-pool">—</b> 智点 · 同行方案 <b id="hb-so">—</b> 个</p></div>
+            <button class="btn btn-pri" id="hb-go"><i class="fas fa-trophy"></i>去应征赚智点</button>
+          </div>
+          <div class="hx-grid">
+            ${[['fa-trophy', '3,000', '赢企业悬赏', 'hot', 'hb-max'], ['fa-circle-check', '+100', '被企业采纳', 'hot'], ['fa-rocket', '+50', '方案落地', ''], ['fa-reply', '+10', '企业回复', ''],
+              ['fa-paper-plane', '+5', '提交献策', ''], ['fa-heart', '+1', '被点赞', ''], ['fa-share-nodes', '+20', '企业共享方案', 'co'], ['fa-coins', '80%', '方案被同行购买', 'co']]
+              .map(([i, v, l, k, id]) => `<div class="hx-chip ${k}"><i class="fas ${i}"></i><b${id ? ` id="${id}"` : ''}>${v}</b><span>${l}</span></div>`).join('')}
+          </div>
+          <div class="hx-ef"><span><i class="fas fa-shield-halved"></i>智点用于平台内兑换与打赏，不可提现；现金奖励由企业写明、双方线下约定</span><span class="hx-links"><a id="hb-so-btn">同行方案库</a><a id="hb-rank">排行榜</a><a id="hb-rule">完整规则</a></span></div>
         </section>
-        <section class="home-stats" id="home-stats"></section>
         <section class="home-feed" id="home-feed"></section>
         <footer class="home-foot"><span>智导 · 企业智脑 × 献策网络</span><a id="h-admin"><i class="fas fa-shield-halved"></i>平台后台</a></footer>
       </main>
@@ -86,18 +83,24 @@
     on('a-inbox', () => openIdeas(null, 'inbox'));
     on('a-svc', () => window.openServices && openServices());
     on('h-admin', () => window.openAdmin && openAdmin());
+    on('hx-boss', () => { enterBrain(); });
+    on('hx-idea', () => openIdeas('other'));
+    on('hx-wallet', () => openMarket('wallet')); on('hb-rule', () => openMarket('wallet'));
+    { const uid = window.Market?.uid ? Market.uid() : localStorage.getItem('ebrain_uid');
+      if (uid) fetch('/api/mkt/wallet', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ uid }) }).then((r) => r.json()).then((w) => { const e = $('#hx-bal'); if (e && w.ok) e.textContent = (w.balance || 0).toLocaleString(); }).catch(() => { }); }
     on('hb-go', () => openMarket('challenges')); on('hb-so-btn', () => openMarket('solutions')); on('hb-rank', () => openMarket('rank'));
     Promise.all([fetch('/api/mkt/challenges').then((r) => r.json()), fetch('/api/mkt/solutions').then((r) => r.json())]).then(([a, b2]) => {
       const set = (id, v) => { const e = $('#' + id); if (e) e.textContent = v; };
       set('hb-ch', a.challenges?.length ?? 0); set('hb-pool', (a.challenges || []).reduce((n, c) => n + (c.escrow || 0), 0).toLocaleString()); set('hb-so', b2.solutions?.length ?? 0);
+      const mx = Math.max(0, ...(a.challenges || []).map((c) => c.rewardPoints || 0)); if (mx) set('hb-max', mx.toLocaleString());
     }).catch(() => { });
     on('b-go', () => openIdeas('other'));
     on('b-mine', () => openIdeas(null, 'mine'));
     on('b-square', () => openIdeas(null, 'square'));
     const paint = () => {
       const el = $('#home-stats'); if (!el || !stats) return;
-      el.innerHTML = [['fa-lightbulb', stats.ideas, '份献策已提交'], ['fa-building', stats.companies, '家企业已入驻'], ['fa-thumbs-up', stats.adopted, '份献策被采纳'], ['fa-robot', has ? (S.agents?.length || 0) : '—', '个 Agent 在为你工作']]
-        .map(([i, v, l]) => `<div><i class="fas ${i}"></i><b>${v ?? 0}</b><span>${l}</span></div>`).join('');
+      el.innerHTML = [[stats.ideas, '份献策'], [stats.companies, '家企业入驻'], [stats.adopted, '份被采纳'], [stats.likes, '次点赞']]
+        .map(([v, l]) => `<span><b>${v ?? 0}</b>${l}</span>`).join('<i></i>');
     };
     paint();
     fetch('/api/ideas/stats').then((r) => r.json()).then((j) => { if (j.ok) { stats = j; paint(); } }).catch(() => { });
