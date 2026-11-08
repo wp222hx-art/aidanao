@@ -113,7 +113,7 @@
   function detail(r) {
     if (!r) return '';
     const v = VERD[r.acceptance?.verdict] || ['—', 'p'];
-    return `<div class="card"><div class="flex between"><div><div class="h2" style="font-size:17px">#${r.no} ${esc(r.text)}</div><div class="hint">${esc(r.company)} · ${esc(r.industry)} · 下达 ${r.issuedAt} · 完成 ${r.doneAt}${r.iteration > 1 ? ` · 第 ${r.iteration} 轮` : ''}</div></div><div class="flex"><button class="btn btn-ghost btn-sm" data-brief="${r.id}"><i class="fas fa-person-chalkboard"></i>全屏部门汇报会</button><button class="btn btn-pri btn-sm" data-zip="${r.id}"><i class="fas fa-file-zipper"></i>打包下载全部文档</button></div></div>
+    return `<div class="card"><div class="flex between"><div><div class="h2" style="font-size:17px">#${r.no} ${esc(r.text)}</div><div class="hint">${esc(r.company)} · ${esc(r.industry)} · 下达 ${r.issuedAt} · 完成 ${r.doneAt}${r.iteration > 1 ? ` · 第 ${r.iteration} 轮` : ''}</div></div><div class="flex"><button class="btn btn-ghost btn-sm" data-share="${r.id}" title="AI 脱敏后共享到同行方案库，同行使用你就能赚智点"><i class="fas fa-share-nodes"></i>共享给同行</button><button class="btn btn-ghost btn-sm" data-brief="${r.id}"><i class="fas fa-person-chalkboard"></i>全屏部门汇报会</button><button class="btn btn-pri btn-sm" data-zip="${r.id}"><i class="fas fa-file-zipper"></i>打包下载全部文档</button></div></div>
       ${r.goal ? `<div class="mt" style="font-size:13px"><b>目标：</b>${esc(r.goal)}</div>` : ''}
       <div class="grid4 mt"><div class="stat sm"><div class="l">指令验收</div><div class="v">${r.acceptance?.score ?? '—'} <span class="tag ${v[1]}" style="font-size:11px">${v[0]}</span></div></div><div class="stat sm"><div class="l">部门平均分</div><div class="v">${r.stats.avg}</div></div><div class="stat sm"><div class="l">工具调用 / 证据</div><div class="v">${r.stats.toolCalls} / ${r.stats.evidence}</div></div><div class="stat sm"><div class="l">返工次数</div><div class="v">${r.stats.rework}</div></div></div>
       ${r.acceptance?.summary ? `<div class="cp-acc mt" style="margin:12px 0 0">${esc(r.acceptance.summary)}</div>` : ''}</div>
@@ -124,6 +124,7 @@
   const findSnap = (id) => { for (const r of Archive.list()) for (const d of r.depts) { const t = d.tasks.find((x) => x.id === id); if (t) return t; } return null; };
   function bindDetail(p) {
     $$('[data-rv]', p).forEach((b) => b.onclick = () => openReport(findSnap(b.dataset.rv), b.dataset.tab));
+    $$('[data-share]', p).forEach((b) => b.onclick = () => window.Market && Market.shareFromArchive(Archive.get(b.dataset.share)));
     $$('[data-zip]', p).forEach((b) => b.onclick = () => Archive.zip(Archive.get(b.dataset.zip)));
     $$('[data-brief]', p).forEach((b) => b.onclick = () => { const r = Archive.get(b.dataset.brief); openBriefing(r.depts.flatMap((d) => d.tasks.filter((t) => t.pack).map((t) => ({ r: t, slides: t.pack.slides })))); });
     $$('[data-iter]', p).forEach((b) => b.onclick = () => { const n = Flow.iterate(b.dataset.iter); if (n) { toast(`已基于档案下达第 ${n.iteration} 轮：#${n.no}`, 'fa-rotate'); gotoView('flow'); } });

@@ -3,6 +3,7 @@
 import { Hono } from 'hono'
 import { tool, AiError, clip } from './ai'
 import { matchCompany } from './idea-util'
+import { RULES, credit, userOf, ensureCompanyGrant, rewardAdoption } from './market-util'
 
 type Bindings = { GSK_API_KEY?: string; GSK_BASE_URL?: string; DB?: D1Database; IDEA_MAIL_FROM?: string; BRAIN_ACCESS_CODE?: string; IDEA_MAIL_REDIRECT?: string; IDEA_MAIL_LIVE?: string }
 const ideas = new Hono<{ Bindings: Bindings }>()
@@ -83,7 +84,8 @@ ideas.post('/company/register', async (c) => {
   const keys = [name, ...String(b.alias || '').split(/[,，、\s]+/)].filter((x) => x.length >= 2)
   let claimed = 0
   for (const k of keys) { const r = await db(c).prepare("UPDATE ideas SET company_id = ?, updated_at = ? WHERE company_id IS NULL AND (target_name = ? OR target_name LIKE ?)").bind(id, now(), k, `%${k}%`).run(); claimed += r.meta?.changes || 0 }
-  return c.json({ ok: true, id, token, name, claimed })
+  await ensureCompanyGrant(db(c), id)
+  return c.json({ ok: true, id, token, name, claimed, grant: RULES.grant.pts })
 })
 ideas.post('/company/login', async (c) => {
   const b = await c.req.json<any>()
@@ -106,15 +108,20 @@ const STATUS = ['read', 'adopted', 'replied', 'declined', 'done']
 ideas.post('/company/update', async (c) => {
   const b = await c.req.json<any>()
   const co = await auth(c, b.id, b.token)
-  const idea = await db(c).prepare('SELECT id FROM ideas WHERE id = ? AND company_id = ?').bind(clip(b.ideaId, 40), co.id).first<any>()
+  const idea = await db(c).prepare('SELECT * FROM ideas WHERE id = ? AND company_id = ?').bind(clip(b.ideaId, 40), co.id).first<any>()
   if (!idea) throw new AiError('献策不存在', 404)
+  const D = db(c), to = userOf(idea.uid), tt = clip(idea.title, 30)
+  let reward: any = null
+  if (['adopted', 'done'].includes(b.status) || (b.cmdNo != null && b.status !== 'declined')) reward = await rewardAdoption(D, co, idea, b.reward)
+  if (typeof b.reply === 'string' && b.reply.trim() && !idea.sample) await credit(D, to, RULES.reply.pts, 'reply', `「${co.name}」回复了《${tt}》`, `reply:${idea.id}`)
+  if (b.status === 'done' && !idea.sample) await credit(D, to, RULES.done.pts, 'done', `《${tt}》落地验收${b.cmdScore != null ? ' ' + b.cmdScore + ' 分' : ''}`, `done:${idea.id}`)
   const sets: string[] = ['updated_at = ?'], vals: any[] = [now()]
   if (STATUS.includes(b.status)) { sets.push('status = ?'); vals.push(b.status) }
   if (typeof b.reply === 'string') { sets.push('reply = ?'); vals.push(clip(b.reply, 600)) }
   if (b.cmdNo != null) { sets.push('cmd_no = ?'); vals.push(+b.cmdNo || null) }
   if (b.cmdScore != null) { sets.push('cmd_score = ?'); vals.push(Math.max(0, Math.min(100, +b.cmdScore || 0))) }
   await db(c).prepare(`UPDATE ideas SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, idea.id).run()
-  return c.json({ ok: true })
+  return c.json({ ok: true, reward })
 })
 
 // ---------- 提交献策 ----------
@@ -127,7 +134,13 @@ ideas.post('/submit', async (c) => {
   const D = db(c), t = now()
   const sentToday = await D.prepare('SELECT COUNT(*) AS n FROM ideas WHERE uid = ? AND created_at > ?').bind(uid, t - DAY).first<any>()
   if ((sentToday?.n || 0) >= LIMIT.perUidDay) throw new AiError(`每人每天最多提交 ${LIMIT.perUidDay} 份献策，明天再来吧`, 429)
-  const co = await matchCompany(D, T.name, T.short, ...(T.aliases || []))
+  // 应征悬赏征集令：直接投递到发布企业的收件箱
+  const chId = clip(b.challengeId, 40)
+  const ch = chId ? await D.prepare("SELECT * FROM challenges WHERE id = ? AND hidden = 0").bind(chId).first<any>() : null
+  if (chId && !ch) throw new AiError('征集令不存在', 404)
+  if (ch && (ch.status !== 'open' || (ch.deadline && ch.deadline < t))) throw new AiError('该征集令已结束', 400)
+  const co = ch?.company_id ? await D.prepare('SELECT id, name FROM companies WHERE id = ?').bind(ch.company_id).first<any>() : await matchCompany(D, T.name, T.short, ...(T.aliases || []))
+  if (ch) { T.name = ch.company_name }
   let channel = 'public', status = 'saved', emailTo = '', emailMsg = '', emailSource = ''
   const id = rid('idea'), origin = new URL(c.req.url).origin
   if (co) { channel = 'inbox'; status = 'delivered' }
@@ -164,10 +177,12 @@ ideas.post('/submit', async (c) => {
   await D.prepare(`INSERT INTO ideas (id, uid, nickname, contact, target_name, company_id, kind, category, title, one_liner, proposal, cover, channel, email_to, email_source, email_msg, status, reply, eval, tags, listed, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)`)
     .bind(id, uid, clip(b.nickname, 30), clip(b.contact, 80), clip(T.name, 60), co?.id || null, kind, clip(b.category, 20), title, clip(b.oneLiner, 120), proposal, clip(b.cover, 300), channel, emailTo, emailSource, emailMsg, status, JSON.stringify(b.eval || {}).slice(0, 1000), (Array.isArray(b.tags) ? b.tags : []).slice(0, 4).map((x: any) => clip(x, 12)).join(','), b.listed === false ? 0 : 1, t, t).run()
-  return c.json({ ok: true, id, channel, status, company: co ? { id: co.id, name: co.name } : null, emailTo, emailMsg, view: `${origin}/api/ideas/view/${id}` })
+  if (ch) await D.prepare('UPDATE ideas SET challenge_id = ? WHERE id = ?').bind(ch.id, id).run()
+  const pts = (await credit(D, userOf(uid), RULES.submit.pts, 'submit', `提交献策《${clip(title, 20)}》`, `submit:${id}`, RULES.submit.cap)) ? RULES.submit.pts : 0
+  return c.json({ ok: true, id, channel, status, company: co ? { id: co.id, name: co.name } : null, emailTo, emailMsg, view: `${origin}/api/ideas/view/${id}`, points: pts, challenge: ch ? { id: ch.id, title: ch.title } : null })
 })
 
-const pub = (full = false) => (r: any) => ({ id: r.id, nickname: r.nickname || '匿名用户', contact: full ? r.contact : undefined, target: r.target_name, companyId: r.company_id, category: r.category, title: r.title, oneLiner: r.one_liner, proposal: full ? r.proposal : undefined, channel: r.channel, emailTo: r.email_to ? r.email_to.replace(/(.{2}).*(@.*)/, '$1***$2') : '', emailMsg: r.email_msg, status: r.status, reply: r.reply, eval: (() => { try { return JSON.parse(r.eval || '{}') } catch { return {} } })(), cmdNo: r.cmd_no, cmdScore: r.cmd_score, kind: r.kind || 'proposal', likes: r.likes || 0, featured: !!r.featured, sample: !!r.sample, listed: r.listed !== 0, tags: String(r.tags || '').split(',').filter(Boolean), createdAt: r.created_at, updatedAt: r.updated_at })
+const pub = (full = false) => (r: any) => ({ id: r.id, nickname: r.nickname || '匿名用户', contact: full ? r.contact : undefined, target: r.target_name, companyId: r.company_id, category: r.category, title: r.title, oneLiner: r.one_liner, proposal: full ? r.proposal : undefined, channel: r.channel, emailTo: r.email_to ? r.email_to.replace(/(.{2}).*(@.*)/, '$1***$2') : '', emailMsg: r.email_msg, status: r.status, reply: r.reply, eval: (() => { try { return JSON.parse(r.eval || '{}') } catch { return {} } })(), cmdNo: r.cmd_no, cmdScore: r.cmd_score, kind: r.kind || 'proposal', challengeId: r.challenge_id || null, rewardPoints: r.reward_points || 0, rewardCash: r.reward_cash || '', likes: r.likes || 0, featured: !!r.featured, sample: !!r.sample, listed: r.listed !== 0, tags: String(r.tags || '').split(',').filter(Boolean), createdAt: r.created_at, updatedAt: r.updated_at })
 
 ideas.get('/mine', async (c) => {
   const uid = clip(c.req.query('uid'), 40); if (!uid) return c.json({ ok: true, ideas: [] })
@@ -216,7 +231,15 @@ ideas.post('/like', async (c) => {
   const D = db(c)
   const ex = await D.prepare('SELECT 1 AS x FROM idea_likes WHERE idea_id = ? AND uid = ?').bind(id, uid).first<any>()
   if (ex) await D.batch([D.prepare('DELETE FROM idea_likes WHERE idea_id = ? AND uid = ?').bind(id, uid), D.prepare('UPDATE ideas SET likes = MAX(0, likes - 1) WHERE id = ?').bind(id)])
-  else await D.batch([D.prepare('INSERT INTO idea_likes (idea_id, uid, at) VALUES (?, ?, ?)').bind(id, uid, now()), D.prepare('UPDATE ideas SET likes = likes + 1 WHERE id = ?').bind(id)])
+  else {
+    await D.batch([D.prepare('INSERT INTO idea_likes (idea_id, uid, at) VALUES (?, ?, ?)').bind(id, uid, now()), D.prepare('UPDATE ideas SET likes = likes + 1 WHERE id = ?').bind(id)])
+    // 点赞激励作者：不能给自己点、样板不计、每份献策最多计 50 个赞；取消再点不会重复发放（ref 唯一）
+    const it = await D.prepare('SELECT uid, title, sample FROM ideas WHERE id = ?').bind(id).first<any>()
+    if (it && !it.sample && it.uid !== uid) {
+      const n = await D.prepare("SELECT COUNT(*) AS n FROM ledger WHERE ref LIKE ?").bind(`like:${id}:%`).first<any>()
+      if ((n?.n || 0) < RULES.like.cap) await credit(D, userOf(it.uid), RULES.like.pts, 'like', `《${clip(it.title, 20)}》获得点赞`, `like:${id}:${uid}`)
+    }
+  }
   const r = await D.prepare('SELECT likes FROM ideas WHERE id = ?').bind(id).first<any>()
   return c.json({ ok: true, liked: !ex, likes: r?.likes || 0 })
 })

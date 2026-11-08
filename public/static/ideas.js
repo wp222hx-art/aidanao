@@ -29,8 +29,9 @@
     const tabs = [['make', 'fa-lightbulb', '献策工作台'], ['mine', 'fa-paper-plane', '我的献策'], ['inbox', 'fa-inbox', '企业收件箱'], ['square', 'fa-fire', '献策广场']];
     p.innerHTML = `<div class="page-hd"><div class="ic" style="background:linear-gradient(135deg,#f59e0b,#ec4899)"><i class="fas fa-lightbulb"></i></div><div><div class="h2">智导 · 献策网络</div><div class="hint">人人都能给企业出主意：AI 帮你把一个念头写成专业策划案，并送到企业手里 —— 已入驻的直达企业收件箱，未入驻的按公开邮箱代发</div></div>
       <div class="flex" style="margin-left:auto;gap:8px"><button class="btn btn-ghost btn-sm" id="id-home"><i class="fas fa-house"></i>返回主页</button>${p.dataset.overlay ? '<button class="close-x" id="id-close" style="margin-left:0" title="关闭"><i class="fas fa-xmark"></i></button>' : ''}</div></div>
-      <div class="id-tabs">${tabs.map(([k, i, n]) => `<button class="${D.tab === k ? 'on' : ''}" data-tab="${k}"><i class="fas ${i}"></i>${n}</button>`).join('')}</div>
+      <div class="id-tabs">${tabs.map(([k, i, n]) => `<button class="${D.tab === k ? 'on' : ''}" data-tab="${k}"><i class="fas ${i}"></i>${n}</button>`).join('')}<button class="id-tab-mkt" data-mkt><i class="fas fa-handshake"></i>撮合中心 · 悬赏征集</button></div>
       <div id="id-body" class="mt"></div>`;
+    const mb = $('[data-mkt]', p); if (mb) mb.onclick = () => window.openMarket && openMarket('challenges');
     $$('[data-tab]', p).forEach((b) => b.onclick = () => { D.tab = b.dataset.tab; if (D.tab === 'inbox') inbox = null; if (D.tab === 'mine') mine = null; if (D.tab === 'square') { stats = null; mk.list = null; } save(); render(p); });
     $('#id-home', p).onclick = () => goHome();
     const cx = $('#id-close', p); if (cx) cx.onclick = () => { p.closest('.ideas-overlay')?.remove(); history.replaceState(null, '', location.pathname); };
@@ -49,7 +50,7 @@
     if (D.mode === 'self') {
       tgt = S.launched && S.company?.name ? targetCard(selfTarget()) : `<div class="cmd-alert"><i class="fas fa-circle-info"></i> 还没有创建你的企业。先在向导里创建企业智脑，再回来为它出主意。<button class="btn btn-pri btn-sm" id="id-gowiz">去创建企业</button></div>`;
     } else {
-      tgt = `<div class="flex"><input id="id-q" placeholder="输入企业名称，如：米哈游、泡泡玛特、蔚来汽车" value="${esc(D.q)}" style="flex:1"><button class="btn btn-pri" id="id-find" ${busy === 'target' ? 'disabled' : ''}><i class="fas ${busy === 'target' ? 'fa-spinner fa-spin' : 'fa-magnifying-glass'}"></i>${busy === 'target' ? '全网识别中…' : '识别企业'}</button></div>
+      tgt = (D.challenge ? `<div class="id-chal"><i class="fas fa-trophy"></i><div><b>正在应征：${esc(D.challenge.title)}</b><small>${esc(D.challenge.company)} · ${D.challenge.rewardPoints ? D.challenge.rewardPoints + ' 智点悬赏' : '荣誉征集'}${D.challenge.rewardCash ? ' · ' + esc(D.challenge.rewardCash) : ''}</small><p>${esc(D.challenge.problem)}</p></div><button class="btn btn-ghost btn-sm" id="id-chal-x">不应征了</button></div>` : '') + `<div class="flex"><input id="id-q" placeholder="输入企业名称，如：米哈游、泡泡玛特、蔚来汽车" value="${esc(D.q)}" style="flex:1"><button class="btn btn-pri" id="id-find" ${busy === 'target' ? 'disabled' : ''}><i class="fas ${busy === 'target' ? 'fa-spinner fa-spin' : 'fa-magnifying-glass'}"></i>${busy === 'target' ? '全网识别中…' : '识别企业'}</button></div>
         <div class="id-hot">${HOT.map((x) => `<button data-hot="${x}">${x}</button>`).join('')}</div>
         ${busy === 'target' ? '<div class="hint mt"><i class="fas fa-spinner fa-spin"></i> 正在检索企业画像、近期动态、用户痛点与公开联系邮箱，约 30-60 秒…</div>' : ''}
         ${T && !T.self ? targetCard(T) : ''}`;
@@ -104,6 +105,7 @@
       return `<div class="id-deliver self"><i class="fas fa-brain"></i><div><b>交给企业智脑执行</b><small>这份策划案会作为一条老板指令进入调度中枢：深度研究验证可行性 → 3 套方案（以你的创意为主线）→ 七维可行性校验 → 你拍板 → 各部门大师执行，产出 Word / Excel / 创意 PPT。</small></div><button class="btn btn-pri" id="id-run"><i class="fas fa-rocket"></i>交给智脑执行</button></div>`;
     }
     const opts = [];
+    if (D.challenge) opts.push(['challenge', 'fa-trophy', `应征「${D.challenge.title}」`, `直接投递到 ${D.challenge.company} 的征集收件箱；被采纳可得 ${D.challenge.rewardPoints || 0} 智点悬赏 + 100 智点平台奖励`]);
     if (T.registered) opts.push(['inbox', 'fa-inbox', `直推「${T.registered.name}」收件箱`, '企业已入驻智导，提案将即时出现在企业收件箱，企业可在线采纳、回复，并交给自己的智脑执行']);
     else if ((T.emails || []).length) opts.push(['email', 'fa-envelope', '邮件代发到企业公开邮箱', '由智导代你发送一封排版好的策划案邮件；同一企业邮箱 7 天内只代发 1 封，企业可一键退订']);
     opts.push(['public', 'fa-globe', '保存为公开献策', '先放进献策广场；企业日后入驻智导时，会自动出现在它的收件箱']);
@@ -111,7 +113,7 @@
     if (D.via === 'email' && !D.emailTo) D.emailTo = T.emails[0].email;
     if (D.sent && D.sent.target === T.name) {
       const s = D.sent, st = ST[s.status] || ['', 'p'];
-      return `<div class="id-sent"><i class="fas ${CH[s.channel]?.[0] || 'fa-check'}"></i><div><b>${st[0]}</b><small>${esc(s.emailMsg || (s.channel === 'inbox' ? `已送达「${s.company?.name}」收件箱，企业处理后你会在「我的献策」看到状态变化` : '已保存为公开献策'))}</small><a class="lnk" href="${esc(s.view)}" target="_blank" rel="noopener">在线查看提案页 →</a></div><button class="btn btn-ghost btn-sm" id="id-new"><i class="fas fa-plus"></i>再献一策</button></div>`;
+      return `<div class="id-sent"><i class="fas ${CH[s.channel]?.[0] || 'fa-check'}"></i><div><b>${st[0]}</b><small>${esc(s.emailMsg || (s.channel === 'inbox' ? `已送达「${s.company?.name}」收件箱，企业处理后你会在「我的献策」看到状态变化` : '已保存为公开献策'))}</small>${s.points ? `<span class="tag ok" style="width:max-content"><i class="fas fa-coins"></i> +${s.points} 智点</span>` : ''}<a class="lnk" href="${esc(s.view)}" target="_blank" rel="noopener">在线查看提案页 →</a><a class="lnk" onclick="openMarket('wallet')">查看我的智点 →</a></div><button class="btn btn-ghost btn-sm" id="id-new"><i class="fas fa-plus"></i>再献一策</button></div>`;
     }
     return `<div class="id-via">${opts.map(([k, i, n, d]) => `<label class="id-opt ${D.via === k ? 'on' : ''}"><input type="radio" name="id-via" value="${k}" ${D.via === k ? 'checked' : ''} hidden><i class="fas ${i}"></i><div><b>${n}</b><small>${d}</small></div></label>`).join('')}</div>
       ${D.via === 'email' ? `<div class="id-email mt"><div class="flex"><span class="hint">收件邮箱</span><select id="id-to" style="flex:1">${T.emails.map((e) => `<option value="${esc(e.email)}" ${D.emailTo === e.email ? 'selected' : ''}>${esc(e.email)}（${esc(e.type)}）</option>`).join('')}</select></div>
@@ -131,11 +133,12 @@
     const on = (sel, fn, ev = 'onclick') => { const el = $(sel, b); if (el) el[ev] = fn; };
     $$('[data-mode]', b).forEach((x) => x.onclick = () => { if (D.mode !== x.dataset.mode) { D.mode = x.dataset.mode; D.res = null; D.sent = null; } save(); rerender(); });
     $$('[data-tab2]', b).forEach((x) => x.onclick = () => { D.tab = x.dataset.tab2; save(); rerender(); });
+    on('#id-chal-x', () => { D.challenge = null; D.target = null; D.res = null; save(); rerender(); });
     on('#id-gowiz', () => enterBrain());
     const find = async () => {
       const q = ($('#id-q', b)?.value || '').trim(); if (!q) return toast('请输入企业名称');
       if (!ai()) return toast('需要连接 AI 才能识别企业');
-      D.q = q; busy = 'target'; D.target = null; D.res = null; D.sent = null; save(); rerender();
+      D.q = q; busy = 'target'; D.target = null; D.challenge = null; D.res = null; D.sent = null; save(); rerender();
       try { const r = await AI.call('/idea/target', { name: q, engine: roleModel('research') }); D.target = r; }
       catch (e) { toast('识别失败：' + e.message, 'fa-triangle-exclamation'); }
       busy = ''; save(); rerender();
@@ -150,7 +153,7 @@
     const write = async (revise) => {
       keep(b); if (!D.idea.trim()) return toast('先写下你的想法');
       busy = 'write'; D.sent = null; save(); rerender();
-      try { const r = await AI.call('/idea/write', { target: curT, idea: D.idea, category: D.cat, kind: D.kind, self: D.mode === 'self', engine: roleModel('strategy'), feedback: revise ? D.fb : '', previous: revise ? D.res?.proposal : '' }); D.res = r; if (revise) D.fb = ''; }
+      try { const r = await AI.call('/idea/write', { target: curT, idea: D.challenge ? `【应征企业征集令】${D.challenge.title}\n企业要解决的问题：${D.challenge.problem}\n\n【我的想法】\n${D.idea}` : D.idea, category: D.cat, kind: D.kind, self: D.mode === 'self', engine: roleModel('strategy'), feedback: revise ? D.fb : '', previous: revise ? D.res?.proposal : '' }); D.res = r; if (revise) D.fb = ''; }
       catch (e) { toast('撰写失败：' + e.message, 'fa-triangle-exclamation'); }
       busy = ''; save(); rerender();
       setTimeout(() => $('.id-prop', host)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
@@ -173,9 +176,10 @@
     on('#id-send', async () => {
       keep(b); busy = 'submit'; rerender();
       try {
-        const r = await api('/submit', { uid: uid(), nickname: D.nick, contact: D.contact, target: curT, category: D.cat, title: D.res.title, oneLiner: D.res.oneLiner, proposal: D.res.proposal, eval: D.res.eval, emailTo: D.via === 'email' ? D.emailTo : '', emailSource: D.via === 'email' ? (curT.emails.find((e) => e.email === D.emailTo)?.source?.url || '') : '', consent: D.via === 'email' && D.consent, emailSubject: D.res.email?.subject, emailOpening: D.res.email?.opening, kind: D.res.kind || D.kind, tags: D.res.tags || [], cover: D.res.cover || '', listed: D.listed !== false });
-        D.sent = { ...r, target: curT.name }; mine = null;
-        toast(r.channel === 'inbox' ? '已直推企业收件箱 🎯' : r.channel === 'email' ? '邮件已代发 ✉️' : (r.emailMsg || '已保存为公开献策'), 'fa-paper-plane');
+        const r = await api('/submit', { uid: uid(), nickname: D.nick, contact: D.contact, target: curT, category: D.cat, title: D.res.title, oneLiner: D.res.oneLiner, proposal: D.res.proposal, eval: D.res.eval, emailTo: D.via === 'email' ? D.emailTo : '', emailSource: D.via === 'email' ? (curT.emails.find((e) => e.email === D.emailTo)?.source?.url || '') : '', consent: D.via === 'email' && D.consent, emailSubject: D.res.email?.subject, emailOpening: D.res.email?.opening, challengeId: D.via === 'challenge' ? D.challenge?.id : '', kind: D.res.kind || D.kind, tags: D.res.tags || [], cover: D.res.cover || '', listed: D.listed !== false });
+        D.sent = { ...r, target: curT.name }; mine = null; if (r.challenge) D.challenge = null; window.Market?.refresh?.();
+        if (r.points) setTimeout(() => toast(`献策奖励 +${r.points} 智点 🪙`, 'fa-coins'), 900);
+        toast(r.challenge ? '已应征征集令 🏆' : r.channel === 'inbox' ? '已直推企业收件箱 🎯' : r.channel === 'email' ? '邮件已代发 ✉️' : (r.emailMsg || '已保存为公开献策'), 'fa-paper-plane');
       } catch (e) { toast('投递失败：' + e.message, 'fa-triangle-exclamation'); }
       busy = ''; save(); rerender();
     });
@@ -193,11 +197,13 @@
     if (!mine) { b.innerHTML = '<div class="hint"><i class="fas fa-spinner fa-spin"></i> 加载中…</div>'; api('/mine?uid=' + uid()).then((r) => { mine = r.ideas; rerender(); }).catch((e) => { b.innerHTML = `<div class="hint">加载失败：${esc(e.message)}</div>`; }); return; }
     if (!mine.length) { b.innerHTML = '<div class="empty-state" style="height:300px"><div><i class="fas fa-paper-plane" style="font-size:36px"></i><p class="mt">还没有献策</p><p class="hint">去「献策工作台」给你喜欢的企业出个好主意吧</p></div></div>'; return; }
     const cnt = (f) => mine.filter(f).length;
-    b.innerHTML = `<div class="grid4"><div class="stat"><div class="l">我的献策</div><div class="v">${mine.length}</div></div><div class="stat"><div class="l">已送达企业</div><div class="v">${cnt((x) => x.channel !== 'public')}</div></div><div class="stat"><div class="l">企业已采纳</div><div class="v" style="color:var(--ok)">${cnt((x) => ['adopted', 'done'].includes(x.status))}</div></div><div class="stat"><div class="l">企业回复</div><div class="v">${cnt((x) => x.reply)}</div></div></div>
+    window.Market?.api('/wallet', { uid: uid() }).then((w) => { const el = $('#mine-pts', b); if (el) el.innerHTML = `<div class="id-pts"><i class="fas fa-coins"></i><div><b>${w.balance}</b><small>我的智点 · 累计获得 ${w.earned}${w.rank ? ' · 排名 #' + w.rank : ''}</small></div><button class="btn btn-ghost btn-sm" onclick="openMarket('wallet')">明细与规则</button><button class="btn btn-warm btn-sm" onclick="openMarket('challenges')"><i class="fas fa-trophy"></i>去应征悬赏</button></div>`; }).catch(() => { });
+    b.innerHTML = `<div id="mine-pts"></div><div class="grid4 mt"><div class="stat"><div class="l">我的献策</div><div class="v">${mine.length}</div></div><div class="stat"><div class="l">已送达企业</div><div class="v">${cnt((x) => x.channel !== 'public')}</div></div><div class="stat"><div class="l">企业已采纳</div><div class="v" style="color:var(--ok)">${cnt((x) => ['adopted', 'done'].includes(x.status))}</div></div><div class="stat"><div class="l">企业回复</div><div class="v">${cnt((x) => x.reply)}</div></div></div>
       <div class="id-list mt">${mine.map((x) => { const st = ST[x.status] || [x.status, 'p']; return `<article class="id-item"><div class="flex between"><div><span class="id-kb k-${x.kind}"><i class="fas ${KN[x.kind]?.[0] || 'fa-file-lines'}"></i>${KN[x.kind]?.[1] || '策划案'}</span> <span class="tag"><i class="fas ${CH[x.channel]?.[0]}"></i> ${CH[x.channel]?.[1]}</span> <b>→ ${esc(x.target)}</b> <span class="dim">· ${esc(x.category || '')} · ${new Date(x.createdAt).toLocaleString('zh-CN', { hour12: false }).slice(0, 16)}</span></div><span class="tag ${st[1]}">${st[0]}</span></div>
         <div class="id-it-t">${esc(x.title)}</div><div class="hint">${esc(x.oneLiner || '')}</div>
         ${x.emailMsg ? `<div class="hint mt"><i class="fas fa-envelope"></i> ${esc(x.emailTo ? x.emailTo + ' · ' : '')}${esc(x.emailMsg)}</div>` : ''}
         ${x.reply ? `<div class="fb-box ok mt"><b>企业回复：</b>${esc(x.reply)}</div>` : ''}
+        ${x.rewardPoints || x.rewardCash ? `<div class="id-reward"><i class="fas fa-gift"></i>${x.rewardPoints ? `获得悬赏 / 打赏 <b>${x.rewardPoints}</b> 智点` : ''}${x.rewardCash ? `　现金奖励：${esc(x.rewardCash)}（与企业线下约定）` : ''}</div>` : ''}
         ${x.cmdNo ? `<div class="hint mt"><i class="fas fa-brain"></i> 企业已将你的提案交给智脑执行（指令 #${x.cmdNo}${x.cmdScore != null ? ` · 验收 ${x.cmdScore} 分` : ''}）</div>` : ''}
         <div class="flex mt"><span class="dim" style="font-size:12px">AI 评分 ${x.eval?.total ?? '—'}</span><a class="lnk" href="/api/ideas/view/${x.id}" target="_blank" rel="noopener" style="margin-left:auto">查看提案页 →</a></div></article>`; }).join('')}</div>`;
   }
@@ -222,7 +228,7 @@
     const cnt = (f) => inbox.filter(f).length;
     b.innerHTML = `<div class="flex between"><div class="h3"><i class="fas fa-inbox" style="color:var(--ok)"></i> ${esc(N.name)} · 用户献策收件箱</div><div class="flex"><button class="btn btn-ghost btn-sm" id="nw-ref"><i class="fas fa-rotate"></i>刷新</button><button class="btn btn-ghost btn-sm" id="nw-out">退出企业身份</button></div></div>
       <div class="grid4 mt"><div class="stat"><div class="l">收到献策</div><div class="v">${inbox.length}</div></div><div class="stat"><div class="l">待处理</div><div class="v" style="color:var(--warn)">${cnt((x) => ['delivered', 'saved', 'emailed'].includes(x.status))}</div></div><div class="stat"><div class="l">已采纳</div><div class="v" style="color:var(--ok)">${cnt((x) => ['adopted', 'done'].includes(x.status))}</div></div><div class="stat"><div class="l">平均 AI 评分</div><div class="v">${inbox.length ? Math.round(inbox.reduce((a, x) => a + (x.eval?.total || 0), 0) / inbox.length) : '—'}</div></div></div>
-      ${inbox.length ? `<div class="id-list mt">${inbox.map((x) => { const st = ST[x.status] || [x.status, 'p']; return `<article class="id-item inbox" data-iid="${x.id}"><div class="flex between"><div><b>${esc(x.title)}</b> <span class="dim">· 来自 ${esc(x.nickname)}${x.contact ? `（${esc(x.contact)}）` : ''} · ${esc(x.category || '')} · ${new Date(x.createdAt).toLocaleDateString('zh-CN')}</span></div><div class="flex"><span class="tag">AI ${x.eval?.total ?? '—'}</span><span class="tag ${st[1]}">${st[0]}</span></div></div>
+      ${inbox.length ? `<div class="id-list mt">${inbox.map((x) => { const st = ST[x.status] || [x.status, 'p']; return `<article class="id-item inbox" data-iid="${x.id}"><div class="flex between"><div>${x.challengeId ? '<span class="tag warn"><i class="fas fa-trophy"></i> 征集令应征</span> ' : ''}<b>${esc(x.title)}</b> <span class="dim">· 来自 ${esc(x.nickname)}${x.contact ? `（${esc(x.contact)}）` : ''} · ${esc(x.category || '')} · ${new Date(x.createdAt).toLocaleDateString('zh-CN')}</span></div><div class="flex"><span class="tag">AI ${x.eval?.total ?? '—'}</span><span class="tag ${st[1]}">${st[0]}</span></div></div>
         <div class="hint mt">${esc(x.oneLiner || '')}</div>
         <details class="mt"><summary class="lnk">展开策划案全文</summary><div class="md id-md mt">${mdRender(x.proposal || '')}</div></details>
         ${x.reply ? `<div class="fb-box ok mt"><b>已回复：</b>${esc(x.reply)}</div>` : ''}
@@ -235,12 +241,16 @@
       const upd = (o) => api('/company/update', { id: N.id, token: N.token, ideaId: x.id, ...o });
       try {
         if (act === 'reply') { const v = prompt('回复提案人：', '感谢你的创意！我们已认真阅读，'); if (!v) return; await upd({ reply: v, status: x.status === 'adopted' || x.status === 'done' ? x.status : 'replied' }); }
+        const tipOf = () => { if (x.challengeId) return 0; const v = prompt('采纳并打赏提案人多少智点？（从企业钱包扣，0 = 不打赏；平台另奖励提案人 100 智点）', '100'); if (v === null) return null; return Math.max(0, parseInt(v, 10) || 0); };
+        const said = (r) => { const g = (r?.reward?.bonus || 0) + (r?.reward?.paid || 0); if (g) setTimeout(() => toast(`提案人获得 ${g} 智点${r.reward.paid ? `（含${x.challengeId ? '悬赏' : '打赏'} ${r.reward.paid}）` : ''} 🪙`, 'fa-coins'), 800); };
+        if (act === 'adopted') { const tip = tipOf(); if (tip === null) return; said(await upd({ status: 'adopted', reward: tip })); }
         else if (act === 'run') {
           if (!S.launched || !window.Flow) return toast('请先创建企业智脑');
           if (!S.sim) { enterBrain(); $('.ideas-overlay') || openIdeas(null, 'inbox'); }
+          const tip = tipOf(); if (tip === null) return;
           const c = Flow.issue(`落地用户献策：${x.title}`, { idea: `# ${x.title}\n${x.oneLiner || ''}\n\n${x.proposal}`, ideaBy: `用户「${x.nickname}」`, ideaRef: x.id });
-          if (!c) return; await upd({ status: 'adopted', cmdNo: c.no }); toast(`已采纳并作为指令 #${c.no} 交给智脑`, 'fa-rocket'); enterBrain('flow');
-        } else await upd({ status: act });
+          if (!c) return; said(await upd({ status: 'adopted', cmdNo: c.no, reward: tip })); toast(`已采纳并作为指令 #${c.no} 交给智脑`, 'fa-rocket'); enterBrain('flow');
+        } else if (act !== 'adopted') await upd({ status: act });
         inbox = null; rerender();
       } catch (e) { toast(e.message, 'fa-triangle-exclamation'); }
     });
@@ -331,6 +341,12 @@
     o.innerHTML = '<section class="page ideas-page" data-overlay="1"></section>';
     document.body.appendChild(o);
     render(o.firstChild);
+  };
+  window.ideaApply = (c) => {
+    D.tab = 'make'; D.mode = 'other'; D.res = null; D.sent = null; D.via = 'challenge'; if (c.kindPref) D.kind = c.kindPref; if (c.category) D.cat = c.category;
+    D.challenge = { id: c.id, title: c.title, company: c.company, problem: c.problem, rewardPoints: c.rewardPoints, rewardCash: c.rewardCash };
+    D.target = { name: c.company, short: c.company, industry: c.industry, business: '', products: [], recent: [], audience: '', pains: [c.problem], opportunities: [], ideaHints: [], emails: [], registered: c.companyId ? { id: c.companyId, name: c.company } : null };
+    save(); openIdeas(); toast(`正在应征：${c.title}`, 'fa-trophy');
   };
   window.ideaReload = () => { try { D = Object.assign(D, JSON.parse(localStorage.getItem(DRAFTK)) || {}); } catch { } rerender(); };
   window.ideaPrefill = (v) => { D.idea = String(v || ''); save(); rerender(); };

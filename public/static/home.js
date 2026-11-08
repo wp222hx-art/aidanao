@@ -68,6 +68,11 @@
             </div>
           </article>
         </section>
+        <section class="home-bridge" id="home-bridge">
+          <div class="hb-l"><span class="hb-tag"><i class="fas fa-handshake"></i> 撮合中心</span><h3>A 出题 · B 解题 · 同行复用</h3><p>企业发布悬赏征集令，用户用 AI 写方案应征；被采纳拿智点，落地验收再加奖；企业把验证过的方案脱敏共享给同行，被使用就有分成</p></div>
+          <div class="hb-flow"><div><i class="fas fa-bullhorn"></i><b id="hb-ch">—</b><small>悬赏征集中</small></div><span><i class="fas fa-arrow-right"></i></span><div><i class="fas fa-coins"></i><b id="hb-pool">—</b><small>智点悬赏池</small></div><span><i class="fas fa-arrow-right"></i></span><div><i class="fas fa-book-open"></i><b id="hb-so">—</b><small>同行方案</small></div></div>
+          <div class="hb-acts"><button class="btn btn-pri" id="hb-go"><i class="fas fa-trophy"></i>去应征赚智点</button><button class="btn btn-ghost" id="hb-so-btn"><i class="fas fa-book-open"></i>同行方案库</button><button class="btn btn-ghost" id="hb-rank"><i class="fas fa-ranking-star"></i>排行榜</button></div>
+        </section>
         <section class="home-stats" id="home-stats"></section>
         <section class="home-feed" id="home-feed"></section>
         <footer class="home-foot"><span>智导 · 企业智脑 × 献策网络</span><a id="h-admin"><i class="fas fa-shield-halved"></i>平台后台</a></footer>
@@ -81,6 +86,11 @@
     on('a-inbox', () => openIdeas(null, 'inbox'));
     on('a-svc', () => window.openServices && openServices());
     on('h-admin', () => window.openAdmin && openAdmin());
+    on('hb-go', () => openMarket('challenges')); on('hb-so-btn', () => openMarket('solutions')); on('hb-rank', () => openMarket('rank'));
+    Promise.all([fetch('/api/mkt/challenges').then((r) => r.json()), fetch('/api/mkt/solutions').then((r) => r.json())]).then(([a, b2]) => {
+      const set = (id, v) => { const e = $('#' + id); if (e) e.textContent = v; };
+      set('hb-ch', a.challenges?.length ?? 0); set('hb-pool', (a.challenges || []).reduce((n, c) => n + (c.escrow || 0), 0).toLocaleString()); set('hb-so', b2.solutions?.length ?? 0);
+    }).catch(() => { });
     on('b-go', () => openIdeas('other'));
     on('b-mine', () => openIdeas(null, 'mine'));
     on('b-square', () => openIdeas(null, 'square'));

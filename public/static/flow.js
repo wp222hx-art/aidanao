@@ -752,7 +752,7 @@
     fx('brain', 'kb', '经验沉淀', '#7c3aed'); setTimeout(() => fx('kb', 'brain', '知识注入', '#7c3aed'), 1500);
     c.stage = 'done'; c.doneAt = stamp();
     // 及时归档：各部门 Word / Excel / PPT + 执行表 + 验收 + 复盘
-    if (window.Archive) { const rec = Archive.add(c); log(c.id, 'archive', `🗂️ #${c.no} 已归档：${rec.stats.depts} 个部门 · ${rec.stats.docs} 份文档 · ${rec.stats.slides} 页幻灯片 · <a class="lnk" onclick="gotoView('archive')">查看项目档案</a>`, '#0f766e'); }
+    if (window.Archive) { const rec = Archive.add(c); log(c.id, 'archive', `🗂️ #${c.no} 已归档：${rec.stats.depts} 个部门 · ${rec.stats.docs} 份文档 · ${rec.stats.slides} 页幻灯片 · <a class="lnk" onclick="gotoView('archive')">查看项目档案</a> · <a class="lnk" onclick="Market.shareFromArchive(Archive.get('${rec.id}'))">共享给同行赚智点</a>`, '#0f766e'); }
     if (c.idea && window.ideaCmdDone) { try { ideaCmdDone(c); } catch (e) { console.warn(e); } }
     saveState(); refresh();
   }

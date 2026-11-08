@@ -2,6 +2,7 @@
 import { Hono } from 'hono'
 import { AiError, clip } from './ai'
 import { now, db, DAY } from './svc-util'
+import { RULES, credit, userOf } from './market-util'
 
 type Bindings = { DB?: D1Database; ADMIN_CODE?: string }
 const admin = new Hono<{ Bindings: Bindings }>()
@@ -36,6 +37,19 @@ admin.get('/overview', async (c) => {
   return c.json({ ok: true, totals: { ideas, real, samples, adopted, hidden, companies, emails7, emailsAll, optout, bots, sessions7, human7, sites, siteViews, likes }, series, channels: ch || [], kinds: kd || [] })
 })
 
+admin.get('/market', async (c) => {
+  const D = db(c)
+  const tot = await D.prepare("SELECT COALESCE(SUM(CASE WHEN delta > 0 THEN delta END),0) AS issued, COALESCE(-SUM(CASE WHEN delta < 0 THEN delta END),0) AS used, COUNT(*) AS n FROM ledger").first<any>()
+  const { results: kinds } = await D.prepare('SELECT kind, COUNT(*) AS n, SUM(delta) AS pts FROM ledger GROUP BY kind ORDER BY ABS(SUM(delta)) DESC').all<any>()
+  const { results: recent } = await D.prepare('SELECT owner, delta, kind, note, at FROM ledger ORDER BY at DESC LIMIT 80').all<any>()
+  const ch = await D.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(escrow),0) AS escrow FROM challenges WHERE hidden = 0").first<any>()
+  const so = await D.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(uses),0) AS uses FROM solutions WHERE hidden = 0').first<any>()
+  return c.json({ ok: true, issued: tot?.issued || 0, used: tot?.used || 0, txns: tot?.n || 0, kinds: kinds || [], recent: recent || [], challenges: ch?.n || 0, escrow: ch?.escrow || 0, solutions: so?.n || 0, uses: so?.uses || 0 })
+})
+admin.post('/hide', async (c) => {
+  const b = await c.req.json<any>(); const t = ({ challenge: 'challenges', solution: 'solutions' } as any)[b.type]; if (!t) throw new AiError('未知类型', 400)
+  await db(c).prepare(`UPDATE ${t} SET hidden = ? WHERE id = ?`).bind(b.value ? 1 : 0, String(b.id).slice(0, 40)).run(); return c.json({ ok: true })
+})
 admin.get('/ideas', async (c) => {
   const q = clip(c.req.query('q'), 40), f = c.req.query('f') || 'all'
   const where: string[] = [], v: any[] = []
@@ -50,6 +64,7 @@ admin.post('/idea', async (c) => {
   if (b.action === 'delete') { await D.batch([D.prepare('DELETE FROM ideas WHERE id = ?').bind(id), D.prepare('DELETE FROM idea_likes WHERE idea_id = ?').bind(id)]); return c.json({ ok: true }) }
   const col = ({ feature: 'featured', hide: 'hidden' } as any)[b.action]; if (!col) throw new AiError('未知操作', 400)
   await D.prepare(`UPDATE ideas SET ${col} = ?, updated_at = ? WHERE id = ?`).bind(b.value ? 1 : 0, now(), id).run()
+  if (col === 'featured' && b.value) { const it = await D.prepare('SELECT uid, title, sample FROM ideas WHERE id = ?').bind(id).first<any>(); if (it && !it.sample) await credit(D, userOf(it.uid), RULES.feature.pts, 'feature', `《${String(it.title).slice(0, 20)}》入选精选`, `feature:${id}`) }
   return c.json({ ok: true })
 })
 admin.get('/companies', async (c) => {

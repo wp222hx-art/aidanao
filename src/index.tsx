@@ -4,6 +4,7 @@ import ideaRoutes from './ideas'
 import svcRoutes, { serveSite } from './svc'
 import csRoutes, { widgetJs, chatPage } from './cs'
 import adminRoutes from './admin'
+import mktRoutes from './market'
 
 const app = new Hono<{ Bindings: { GSK_API_KEY?: string; BRAIN_ACCESS_CODE?: string; DB?: D1Database; ADMIN_CODE?: string } }>()
 
@@ -24,6 +25,8 @@ app.use('/api/svc/*', async (c, next) => {
 app.route('/api/svc', svcRoutes)
 app.route('/api/cs', csRoutes)
 app.route('/api/admin', adminRoutes)
+app.use('/api/mkt/solution/draft', async (c, next) => { const code = c.env.BRAIN_ACCESS_CODE; if (code && c.req.header('X-Brain-Code') !== code) return c.json({ ok: false, error: '需要访问口令', needCode: true }, 401); await next() })
+app.route('/api/mkt', mktRoutes)
 // 公开交付物：AI 生成的企业网站
 app.get('/s/:id', serveSite)
 // 客服 Agent：嵌入脚本 + 对话页
@@ -148,6 +151,7 @@ app.get('/', (c) => c.html(`<!DOCTYPE html>
 <script src="/static/ideas.js"></script>
 <script src="/static/home.js"></script>
 <script src="/static/services.js"></script>
+<script src="/static/market.js"></script>
 <script src="/static/admin.js"></script>
 <script src="/static/ai.js"></script>
 <script src="/static/main.js"></script>

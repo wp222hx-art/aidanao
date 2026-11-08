@@ -38,6 +38,7 @@
     { k: 'org', i: 'fa-sitemap', n: '组织人才' },
     { k: 'services', i: 'fa-layer-group', n: '服务中心' },
     { k: 'ideas', i: 'fa-lightbulb', n: '献策网络' },
+    { k: 'market', i: 'fa-handshake', n: '撮合中心' },
     { k: 'masters', i: 'fa-user-tie', n: '大师智库' },
     { k: 'models', i: 'fa-sliders', n: '模型配置' },
     { k: 'archive', i: 'fa-box-archive', n: '项目档案' }

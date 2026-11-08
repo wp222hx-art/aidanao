@@ -10,7 +10,7 @@
     return j;
   };
   const dt = (t) => t ? new Date(t).toLocaleString('zh-CN', { hour12: false }).slice(0, 16) : '—';
-  const TABS = [['overview', 'fa-chart-line', '运营总览'], ['ideas', 'fa-lightbulb', '献策审核'], ['companies', 'fa-building', '入驻企业'], ['emails', 'fa-envelope', '邮件与退订'], ['cs', 'fa-headset', '客服会话'], ['sites', 'fa-globe', '网站交付'], ['cache', 'fa-database', '数据缓存']];
+  const TABS = [['overview', 'fa-chart-line', '运营总览'], ['market', 'fa-coins', '智点与撮合'], ['ideas', 'fa-lightbulb', '献策审核'], ['companies', 'fa-building', '入驻企业'], ['emails', 'fa-envelope', '邮件与退订'], ['cs', 'fa-headset', '客服会话'], ['sites', 'fa-globe', '网站交付'], ['cache', 'fa-database', '数据缓存']];
   const KN = { proposal: '策划案', suggestion: '改进建议', design: '设计思路' }, CHN = { inbox: '直推收件箱', email: '邮件代发', public: '公开献策' };
 
   window.openAdmin = function () {
@@ -41,8 +41,8 @@
   async function load() {
     const m = $('#adm-main', host);
     try {
-      const path = { overview: '/overview', ideas: `/ideas?q=${encodeURIComponent(q)}&f=${f}`, companies: '/companies', emails: '/emails', cs: '/cs', sites: '/sites', cache: '/cache' }[tab];
-      data[tab] = await api(path); ({ overview, ideas, companies, emails, cs, sites, cache })[tab](m, data[tab]);
+      const path = { market: '/market', overview: '/overview', ideas: `/ideas?q=${encodeURIComponent(q)}&f=${f}`, companies: '/companies', emails: '/emails', cs: '/cs', sites: '/sites', cache: '/cache' }[tab];
+      data[tab] = await api(path); ({ market, overview, ideas, companies, emails, cs, sites, cache })[tab](m, data[tab]);
     } catch (e) { if (e.auth) return render(); m.innerHTML = `<div class="cmd-alert"><i class="fas fa-triangle-exclamation"></i> ${esc(e.message)}</div>`; }
   }
   const hd = (t, s, right = '') => `<div class="adm-hd"><div><h2>${t}</h2><p class="hint">${s}</p></div><div class="flex">${right}<button class="btn btn-ghost btn-sm" data-reload><i class="fas fa-rotate"></i>刷新</button></div></div>`;
@@ -60,6 +60,18 @@
     bindReload(m);
     const draw = () => { if (!window.Chart || !$('#adm-chart', m)) return; chart?.destroy?.(); chart = new Chart($('#adm-chart', m), { type: 'line', data: { labels: d.series.map((x) => x.day), datasets: [{ label: '献策', data: d.series.map((x) => x.ideas), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.12)', fill: true, tension: .35 }, { label: '客服会话', data: d.series.map((x) => x.cs), borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,.08)', fill: true, tension: .35 }] }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }); };
     if (window.Chart) draw(); else { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/chart.js'; s.onload = draw; document.head.appendChild(s); }
+  }
+  const KIND = { submit: '提交献策', like: '点赞', reply: '企业回复', adopt: '采纳奖励', bounty: '悬赏', tip: '打赏', done: '落地验收', feature: '精选', share: '共享方案', use: '方案被用', royalty: '方案分成', buy: '购买方案', grant: '入驻礼包', escrow: '悬赏托管', refund: '托管退回' };
+  async function market(m, d) {
+    const [ch, so] = await Promise.all([fetch('/api/mkt/challenges?status=all').then((r) => r.json()), fetch('/api/mkt/solutions').then((r) => r.json())]);
+    m.innerHTML = hd('智点与撮合', '智点发放 / 消耗流水、征集令与同行方案的运营与审核；所有加减分都有唯一流水号，可追溯、防重复') + `
+      <div class="adm-kpis"><div class="adm-kpi"><i class="fas fa-coins" style="color:#f59e0b"></i><div><span>累计发放</span><b>${d.issued.toLocaleString()}</b><small>${d.txns} 笔流水</small></div></div><div class="adm-kpi"><i class="fas fa-cart-shopping" style="color:#ec4899"></i><div><span>累计消耗</span><b>${d.used.toLocaleString()}</b><small>托管 / 打赏 / 购买</small></div></div><div class="adm-kpi"><i class="fas fa-trophy" style="color:#d97706"></i><div><span>征集令</span><b>${d.challenges}</b><small>托管中 ${d.escrow.toLocaleString()} 智点</small></div></div><div class="adm-kpi"><i class="fas fa-book-open" style="color:#10b981"></i><div><span>同行方案</span><b>${d.solutions}</b><small>被使用 ${d.uses} 次</small></div></div></div>
+      <div class="adm-grid"><div class="card"><div class="h4">最近流水</div><table class="adm-table mt"><thead><tr><th>账户</th><th>类型</th><th>说明</th><th>智点</th><th>时间</th></tr></thead><tbody>${d.recent.map((x) => `<tr><td><code>${esc(x.owner)}</code></td><td>${KIND[x.kind] || x.kind}</td><td>${esc(x.note)}</td><td style="color:${x.delta > 0 ? 'var(--ok)' : '#b45309'};font-weight:700">${x.delta > 0 ? '+' : ''}${x.delta}</td><td><small>${dt(x.at)}</small></td></tr>`).join('') || '<tr><td colspan="5" class="hint">暂无</td></tr>'}</tbody></table></div>
+        <div class="card"><div class="h4">按类型汇总</div>${d.kinds.map((k) => `<div class="sv-row"><b>${KIND[k.kind] || k.kind}</b><small>${k.n} 笔</small><span style="text-align:right;font-weight:700">${k.pts > 0 ? '+' : ''}${k.pts}</span></div>`).join('') || '<div class="hint mt">暂无</div>'}</div></div>
+      <div class="adm-grid"><div class="card"><div class="h4">征集令</div>${(ch.challenges || []).map((c) => `<div class="sv-row"><b>${esc(c.title)}</b><small>${esc(c.company)} · ${c.entries} 应征 · 托管 ${c.escrow}${c.sample ? ' · 样板' : ''}</small><button class="btn btn-ghost btn-sm" data-hide="challenge" data-id="${c.id}"><i class="fas fa-eye-slash"></i></button></div>`).join('') || '<div class="hint mt">暂无</div>'}</div>
+        <div class="card"><div class="h4">同行方案</div>${(so.solutions || []).map((s) => `<div class="sv-row"><b>${esc(s.title)}</b><small>${esc(s.author)} · ${s.uses} 次使用 · ${s.price ? s.price + ' 智点' : '免费'}${s.sample ? ' · 样板' : ''}</small><button class="btn btn-ghost btn-sm" data-hide="solution" data-id="${s.id}"><i class="fas fa-eye-slash"></i></button></div>`).join('') || '<div class="hint mt">暂无</div>'}</div></div>`;
+    bindReload(m);
+    $$('[data-hide]', m).forEach((b) => b.onclick = () => { if (confirm('下架该内容？')) act('/hide', { type: b.dataset.hide, id: b.dataset.id, value: 1 }, '已下架'); });
   }
   function ideas(m, d) {
     const fs = [['all', '全部'], ['real', '真实用户'], ['sample', '样板'], ['featured', '精选'], ['hidden', '已隐藏'], ['email', '邮件代发']];

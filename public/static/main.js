@@ -17,6 +17,7 @@ function routeHash() {
   else if (h === 'join' || h === 'inbox') openIdeas(null, 'inbox');
   else if (h === 'square') openIdeas(null, 'square');
   else if (h === 'admin' && window.openAdmin) openAdmin();
+  else if (h === 'market' && window.openMarket) openMarket();
 }
 document.addEventListener('DOMContentLoaded', () => setTimeout(routeHash, 50));
 window.addEventListener('hashchange', routeHash);
