@@ -230,7 +230,7 @@
   // 仿真版研究 / 规划 / 校验（明确标注仿真）
   function simPrep(c) {
     if (c.stage === 'research') {
-      c.research = { sim: true, essence: c.text.slice(0, 30), summary: '仿真模式：未连接 Genspark，未进行真实检索。连接后将基于全网证据输出研究结论与真实数据边界。', findings: [{ text: '（仿真）行业公开数据待检索', src: [], kind: 'inference' }], data: [{ metric: '市场规模', value: '待真实检索', source: '仿真', confidence: 'low' }, { metric: '行业增速', value: '待真实检索', source: '仿真', confidence: 'low' }], boundaries: ['（仿真）连接 Genspark 后按真实数据划定目标上限'], opportunities: ['（仿真）机会待研究'], risks: ['（仿真）风险待研究'], gaps: ['企业内部经营数据'], answers: [], sources: [], at: stamp() };
+      c.research = { sim: true, essence: c.text.slice(0, 30), summary: '仿真模式：AI 未连接，未进行真实检索。连接后将基于全网证据输出研究结论与真实数据边界。', findings: [{ text: '（仿真）行业公开数据待检索', src: [], kind: 'inference' }], data: [{ metric: '市场规模', value: '待真实检索', source: '仿真', confidence: 'low' }, { metric: '行业增速', value: '待真实检索', source: '仿真', confidence: 'low' }], boundaries: ['（仿真）连接 AI 后按真实数据划定目标上限'], opportunities: ['（仿真）机会待研究'], risks: ['（仿真）风险待研究'], gaps: ['企业内部经营数据'], answers: [], sources: [], at: stamp() };
       ctrace(c, 'research', { label: '深度研究', detail: '（仿真）研究设计 + 检索 + 综合', status: 'ok', sim: true });
       log(c.id, 'research', `🔬 #${c.no} 深度研究（仿真）`, '#2563eb');
       c.stage = 'strategy'; c.planDue = S.sim.min + rand(8, 14); return;
@@ -245,7 +245,7 @@
     if (c.stage === 'feasibility') {
       const dims = [['data', '数据支撑', 20], ['resource', '资源匹配', 15], ['finance', '财务可行', 15], ['timeline', '时间可行', 10], ['risk', '风险可控', 15], ['compliance', '合规安全', 10], ['landing', '落地路径', 15]].map(([k, name, w]) => ({ k, name, w, score: rand(72, 92), note: '（仿真）' }));
       const total = Math.round(dims.reduce((a, d) => a + d.score * d.w, 0) / 100);
-      c.feas = { sim: true, v: c.strategy.v, dims, total, verdict: total >= 80 ? 'go' : 'revise', issues: [{ level: 'mid', text: '（仿真）关键目标缺少真实数据支撑', fix: '连接 Genspark 后基于检索数据校准' }], assumptions: ['（仿真）关键假设待验证'], optionsView: [], summary: `（仿真）可行性 ${total} 分`, at: stamp() };
+      c.feas = { sim: true, v: c.strategy.v, dims, total, verdict: total >= 80 ? 'go' : 'revise', issues: [{ level: 'mid', text: '（仿真）关键目标缺少真实数据支撑', fix: '连接 AI 后基于检索数据校准' }], assumptions: ['（仿真）关键假设待验证'], optionsView: [], summary: `（仿真）可行性 ${total} 分`, at: stamp() };
       c.feasHist = [...(c.feasHist || []), { v: c.feas.v, total, verdict: c.feas.verdict }];
       ctrace(c, 'feasibility', { label: '可行性校验', detail: `（仿真）${total} 分`, status: 'ok', sim: true });
       log(c.id, 'feas', `⚖️ #${c.no} 可行性校验 <b>${total}</b> 分（仿真）`, '#059669');
@@ -383,7 +383,7 @@
         if (t.progress >= 100) { t.status = 'verify'; t.verifyDue = S.sim.min + 10; if (a) a.status = 'verify'; fx(t.deptId, 'qa', '提交校验', '#d97706'); }
       } else if (t.status === 'verify' && S.sim.min >= t.verifyDue) {
         const ev = simEval(t);
-        t.output = `> 仿真模式：未连接 Genspark，以下为流程演示，不含真实内容。\n\n## 结论\n「${t.title}」按${TIERS[t.tier].name}标准完成（仿真）。\n\n## 验收对照\n${(t.criteria || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}`;
+        t.output = `> 仿真模式：AI 未连接，以下为流程演示，不含真实内容。\n\n## 结论\n「${t.title}」按${TIERS[t.tier].name}标准完成（仿真）。\n\n## 验收对照\n${(t.criteria || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}`;
         t.accept = ev; trace(t, 'accept', { detail: `（仿真）${ev.met}/${ev.items.length} 条达标 · ${ev.total} 分（门槛 ${ev.threshold}）`, extra: { items: ev.items }, sim: true });
         applyVerdict(t, ev);
       }
@@ -483,7 +483,7 @@
     const leads = await AI.scanLeads(t.kws, t.cmdId);
     t.foundLeads = leads.filter((l) => l.grade === 'A').slice(0, 2).map((l) => l.id);
     const md = leads.length
-      ? `本轮 Genspark 全网检索后，AI 筛出 **${leads.length}** 条有效商机：\n` + leads.map((l) => `- **${l.grade}级** ${l.title}（采购方：${l.buyer || '未知'}，匹配 ${l.match}%）：${l.reason || ''}；下一步：${l.next || '待定'}。来源：${l.link}`).join('\n') + (t.foundLeads.length ? `\n\n其中 ${t.foundLeads.length} 条 A 级商机将在交付后追加跟进任务。` : '')
+      ? `本轮 AI 全网检索后，AI 筛出 **${leads.length}** 条有效商机：\n` + leads.map((l) => `- **${l.grade}级** ${l.title}（采购方：${l.buyer || '未知'}，匹配 ${l.match}%）：${l.reason || ''}；下一步：${l.next || '待定'}。来源：${l.link}`).join('\n') + (t.foundLeads.length ? `\n\n其中 ${t.foundLeads.length} 条 A 级商机将在交付后追加跟进任务。` : '')
       : '本轮检索未发现与企业主营匹配的商机，建议调整检索关键词或扩大区域范围（需人工确认）。';
     return { output: md };
   }

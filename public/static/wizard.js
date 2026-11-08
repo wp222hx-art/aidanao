@@ -111,7 +111,7 @@
     const L = (t) => { const el = $('#ident-log'); if (el) el.innerHTML = `<span><i class="fas fa-angle-right"></i> ${t}</span>`; };
     $('#core .inner').innerHTML = `<div><i class="fas fa-satellite-dish fa-beat" style="font-size:22px;color:var(--c1)"></i><div style="margin-top:4px;font-size:12px">${esc(name.slice(0, 8))}<br>检索中</div></div>`;
     const useAI = window.AI && AI.on;
-    L(useAI ? `锁定企业「${esc(name)}」，调用 Genspark 全网检索企业简介、主营业务、经营范围…` : `锁定企业「${esc(name)}」，正在检索维基百科、公开资讯、主营业务…`);
+    L(useAI ? `锁定企业「${esc(name)}」，调用 AI 全网检索企业简介、主营业务、经营范围…` : `锁定企业「${esc(name)}」，正在检索维基百科、公开资讯、主营业务…`);
     const req = fetch(`/api/scan?name=${encodeURIComponent(name)}`).then((r) => r.json()).catch(() => null);
     const aiReq = useAI ? AI.call('/classify', { name }).catch((e) => ({ error: e.message })) : Promise.resolve(null);
     // 遍历行业星球动画
@@ -124,11 +124,11 @@
       planets[i].classList.remove('probe');
     }
     const scan = await req;
-    L(useAI ? 'Genspark AI 正在阅读检索证据，判断主营业务并归入 97 个国标大类…' : '提取企业主营业务关键词，匹配 97 个行业大类…');
+    L(useAI ? '智导 AI 正在阅读检索证据，判断主营业务并归入 97 个国标大类…' : '提取企业主营业务关键词，匹配 97 个行业大类…');
     const air = await aiReq;
     let r;
     if (air && !air.error && air.cands?.length) {
-      r = { name, ai: true, business: air.business, sources: [`Genspark 全网检索（${Math.round((air.evidenceChars || 0) / 100) / 10}k 字证据）`, 'AI 归类'], summary: air.business,
+      r = { name, ai: true, business: air.business, sources: [`AI 全网检索（${Math.round((air.evidenceChars || 0) / 100) / 10}k 字证据）`, 'AI 归类'], summary: air.business,
         cands: air.cands.map((c) => ({ code: c.code, indName: c.indName, div: c.div, divName: c.divName, conf: c.conf, hits: [...(air.keywords || []).slice(0, 6), c.reason].filter(Boolean), reason: c.reason })) };
       if (!air.found) r.sources.push('⚠ 未检索到该企业的确切资料，结果为名称推断');
     } else {
@@ -148,7 +148,7 @@
     applyCandidate(r.cands[0], true);
     if (r.business && S.company.profile) S.company.profile.business = r.business;
     renderIdent(r);
-    toast(`${r.ai ? 'Genspark AI ' : ''}已自动归类：${r.cands[0].indName} › ${r.cands[0].divName}`, 'fa-location-crosshairs');
+    toast(`${r.ai ? '智导 AI ' : ''}已自动归类：${r.cands[0].indName} › ${r.cands[0].divName}`, 'fa-location-crosshairs');
     if (r.ai) { saveState(); AI.enrichProfile().then(() => { updateNext(); toast('企业深度画像已生成（第 2 步可查看）', 'fa-brain'); }).catch(() => { }); }
   }
 
@@ -174,7 +174,7 @@
     const cur = S.industry?.div?.code;
     res.innerHTML = `
       <div class="ident-cands">
-        <span class="dim" style="font-size:12px;white-space:nowrap"><i class="fas fa-ranking-star"></i> 归类结果${r.ai ? ' <span class="tag ok" style="font-size:10px">Genspark AI</span>' : ''}</span>
+        <span class="dim" style="font-size:12px;white-space:nowrap"><i class="fas fa-ranking-star"></i> 归类结果${r.ai ? ' <span class="tag ok" style="font-size:10px">智导 AI</span>' : ''}</span>
         ${r.cands.slice(0, 3).map((c, i) => `<button class="cand ${cur === c.div ? 'on' : ''}" data-i="${i}">
           <span class="rk">${i + 1}</span>
           <span class="cn"><b>${c.code}${c.div} ${esc(c.divName)}</b><small>${esc(c.indName)}</small></span>
@@ -303,7 +303,7 @@
     let scan = null;
     const p = fetch(`/api/scan?name=${encodeURIComponent(name)}&industry=${encodeURIComponent(S.industry?.div?.name || '')}`).then((r) => r.json()).catch(() => null);
     const nodes = $$('.src-node');
-    for (let i = 2; i < nodes.length; i++) { await sleep(320); nodes[i].classList.add('hit'); L(window.AI && AI.on ? `${SOURCES[i].n}：交由 Genspark 全网检索` : `${SOURCES[i].n}：行业知识库推断完成（需后续授权接入真实数据）`); }
+    for (let i = 2; i < nodes.length; i++) { await sleep(320); nodes[i].classList.add('hit'); L(window.AI && AI.on ? `${SOURCES[i].n}：交由 AI 全网检索` : `${SOURCES[i].n}：行业知识库推断完成（需后续授权接入真实数据）`); }
     scan = await p;
     nodes[0].classList.add(scan?.wiki ? 'hit' : 'miss'); nodes[1].classList.add(scan?.news?.length ? 'hit' : 'miss');
     L(`维基百科：${scan?.wiki ? '命中词条「' + scan.wiki.title + '」' : '未命中'}`);
@@ -312,9 +312,9 @@
     S.company.scan = scan || { news: [], wiki: null };
     S.company.profile = buildProfile(S.company.scan);
     if (window.AI && AI.on) {
-      L('<span style="color:#7c3aed">调用 Genspark：全网检索企业简介、客户、竞争对手、最新动态…</span>');
+      L('<span style="color:#7c3aed">调用 AI：全网检索企业简介、客户、竞争对手、最新动态…</span>');
       const tick = setInterval(() => L(pick(['AI 阅读检索证据…', 'AI 构建价值链…', 'AI 填写商业模式画布…', 'AI 评估七域经营健康度…', 'AI 挖掘生意机会与风险…', 'AI 生成找订单检索词…'])), 1800);
-      try { await AI.enrichProfile(); L('<span style="color:var(--ok)">Genspark 深度画像完成</span>'); }
+      try { await AI.enrichProfile(); L('<span style="color:var(--ok)">AI 深度画像完成</span>'); }
       catch (e) { L(`<span style="color:var(--warn)">AI 画像失败（${esc(e.message)}），已使用行业推断画像</span>`); }
       clearInterval(tick);
     }
@@ -327,7 +327,7 @@
   function renderReport() {
     const P = S.company.profile, sc = S.company.scan || {};
     $('#report').innerHTML = `
-      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-building" style="color:var(--c1)"></i> ${esc(S.company.name)}</span><span class="flex">${P.ai ? '<span class="tag ok"><i class="fas fa-brain"></i> Genspark 深度画像</span>' : '<span class="tag warn">行业推断</span>'}<span class="tag ${P.confidence > 60 ? 'ok' : 'warn'}">置信度 ${P.confidence}%</span></span></div>
+      <div class="card"><div class="ct"><span class="h3"><i class="fas fa-building" style="color:var(--c1)"></i> ${esc(S.company.name)}</span><span class="flex">${P.ai ? '<span class="tag ok"><i class="fas fa-brain"></i> AI 深度画像</span>' : '<span class="tag warn">行业推断</span>'}<span class="tag ${P.confidence > 60 ? 'ok' : 'warn'}">置信度 ${P.confidence}%</span></span></div>
         ${P.business ? `<p style="font-size:13px;margin-bottom:6px"><b>主营：</b>${esc(P.business)}</p>` : ''}
         <p style="line-height:1.7">${esc(P.positioning)}</p>
         ${sc.wiki ? `<p class="muted mt" style="font-size:12px;line-height:1.7">${esc(sc.wiki.extract.slice(0, 260))}… <a href="${sc.wiki.url}" target="_blank" style="color:var(--c1)">维基来源</a></p>` : '<p class="hint mt">未检索到百科词条，以下画像以行业知识推断为主，建议上传企业介绍/官网链接提高精度。</p>'}
@@ -362,7 +362,7 @@
     body.innerHTML = `
     <section class="stage layout-wrap">
       <aside class="palette">
-        <div class="h3">部门模块库</div><div class="hint">点击或拖拽到画布添加；${S.company.profile?.recommendedDepts?.length ? '<b style="color:var(--ok)">Genspark AI</b> 已根据企业画像' : 'AI 已按「' + esc(S.industry?.div?.name || '') + '」'}推荐初始布局。</div>
+        <div class="h3">部门模块库</div><div class="hint">点击或拖拽到画布添加；${S.company.profile?.recommendedDepts?.length ? '<b style="color:var(--ok)">智导 AI</b> 已根据企业画像' : 'AI 已按「' + esc(S.industry?.div?.name || '') + '」'}推荐初始布局。</div>
         <div class="pal-list" id="pal-list"></div>
         <div class="flex"><input id="custom-dept" placeholder="自定义部门名称" style="flex:1;min-width:0"><button class="btn btn-ghost btn-sm" id="add-custom"><i class="fas fa-plus"></i></button></div>
       </aside>
@@ -462,7 +462,7 @@
     const s = { id: uid('p'), deptId: curDept, ...p }; s.value = scoreStaff(s); if (!s.tier) s.tier = autoTier(s);
     S.staff.push(s); saveState(); renderStaff();
     if (window.AI && AI.on && (s.resume || '').length >= 10) {
-      toast(`${s.name} 已入职，Genspark 正在解析简历…`, 'fa-user-check');
+      toast(`${s.name} 已入职，AI 正在解析简历…`, 'fa-user-check');
       AI.resume(s).then(() => { if ($('#staff-grid')) renderStaff(); toast(`AI 评估完成：${s.name} · ${TIERS[tierOf(s)].name} · ${s.value} 分`, 'fa-brain'); });
     } else toast(`${s.name} 已入职 · 价值评分 ${s.value}`, 'fa-user-check');
   }
@@ -488,7 +488,7 @@
       <div class="val"><div class="dim" style="font-size:10px">${p.aiPending ? '<i class="fas fa-spinner fa-spin"></i> AI评估中' : p.ai ? 'AI 评分' : '价值评分'}</div><b class="grad-txt">${p.value}</b></div>
       ${p.ai ? `<div style="font-size:11px;margin-top:8px;line-height:1.6"><span class="tag ok">${esc(p.aiRole || '')}</span> <span class="muted">优势：${esc(p.strengths || '')}</span><br><span class="dim">待提升：${esc(p.gaps || '')} · 搭档：${esc(p.pairAgent || '')}</span></div>` : ''}
       <div class="bar mt"><i style="width:${p.value}%"></i></div>
-      <div class="tl-row" style="margin-top:8px" title="可调用的 Genspark 工具">${staffTools(p).map((x) => `<span class="tl ok" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span>`).join('')}</div>
+      <div class="tl-row" style="margin-top:8px" title="可调用的 AI 工具">${staffTools(p).map((x) => `<span class="tl ok" title="${toolMeta(x).name}"><i class="fas ${toolMeta(x).icon}"></i></span>`).join('')}</div>
       <div class="sk">${p.skills.map((s) => `<span class="tag">${s}</span>`).join('') || '<span class="dim" style="font-size:12px">暂无技能标签</span>'}</div>
       <p class="dim" style="font-size:11px;margin-top:8px;line-height:1.5;max-height:34px;overflow:hidden">${esc(p.resume)}</p>
       <span class="tier-sw" data-id="${p.id}" title="点击切换能力级别">${tierBadge(tierOf(p))}</span>

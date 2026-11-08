@@ -32,10 +32,10 @@
     const cfg = modelCfg();
     if (!CAT && window.AI && AI.on && !loading) Models.load().then(() => { if (window.currentView && currentView() === 'models' && $('#page')) MOD_PAGES.models($('#page')); });
     const vendorCnt = CAT ? CAT.llms.reduce((m, x) => (m[x.vendor] = (m[x.vendor] || 0) + 1, m), {}) : {};
-    p.innerHTML = `<div class="page-hd"><div class="ic"><i class="fas fa-sliders"></i></div><div><div class="h2">模型配置中心</div><div class="hint">每个智能体角色都可以单独指定 Genspark 模型；模型清单与 <code>gsk</code> CLI 同源实时读取，调用全部使用您本人的 Genspark 授权</div></div>
+    p.innerHTML = `<div class="page-hd"><div class="ic"><i class="fas fa-sliders"></i></div><div><div class="h2">模型配置中心</div><div class="hint">每个智能体角色都可以单独指定 AI 模型；模型清单与 <code>gsk</code> CLI 同源实时读取，调用全部使用您本人的 AI 授权</div></div>
       <div style="margin-left:auto" class="flex"><button class="btn btn-ghost btn-sm" id="md-refresh"><i class="fas fa-rotate"></i>刷新模型清单</button></div></div>
       <div class="grid4">
-        <div class="stat"><div class="l"><i class="fas fa-plug" style="color:${window.AI && AI.on ? 'var(--ok)' : 'var(--bad)'}"></i> Genspark CLI 通道</div><div class="v" style="font-size:18px">${window.AI && AI.on ? '已连接' : '未连接'}</div><div class="d muted">${CAT ? esc(CAT.source) : loading ? '读取中…' : '—'}</div></div>
+        <div class="stat"><div class="l"><i class="fas fa-plug" style="color:${window.AI && AI.on ? 'var(--ok)' : 'var(--bad)'}"></i> AI 模型通道</div><div class="v" style="font-size:18px">${window.AI && AI.on ? '已连接' : '未连接'}</div><div class="d muted">${CAT ? esc(CAT.source) : loading ? '读取中…' : '—'}</div></div>
         <div class="stat"><div class="l"><i class="fas fa-brain" style="color:var(--c2)"></i> 可用大模型</div><div class="v">${CAT ? CAT.llms.length : '—'}</div><div class="d muted">${Object.entries(vendorCnt).map(([k, n]) => `${VENDOR[k] || k} ${n}`).join(' · ')}</div></div>
         <div class="stat"><div class="l"><i class="fas fa-image" style="color:#ea580c"></i> 可用出图模型</div><div class="v">${CAT ? CAT.images.length : '—'}</div><div class="d muted">幻灯片默认 GPT Image 2</div></div>
         <div class="stat"><div class="l"><i class="fas fa-gauge-high" style="color:var(--c1)"></i> 推理深度</div><select id="md-effort" class="mt" style="width:100%">${[['medium', '标准（medium）'], ['high', '深度（high）· 推荐'], ['xhigh', '极致（xhigh）· 最慢最贵']].map(([k, n]) => `<option value="${k}" ${cfg.effort === k ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
@@ -58,7 +58,7 @@
     $$('[data-reset]', p).forEach((a) => a.onclick = () => { const r = MODEL_ROLES.find((x) => x.k === a.dataset.reset); cfg.roles[r.k] = r.def; saveState(); MOD_PAGES.models(p); });
     $$('[data-preset]', p).forEach((b) => b.onclick = () => { const P = PRESETS[b.dataset.preset]; Object.assign(cfg.roles, P.roles); tests = {}; saveState(); toast(`已应用「${P.name}」`, 'fa-wand-magic-sparkles'); MOD_PAGES.models(p); });
     $$('[data-test]', p).forEach((b) => b.onclick = async () => {
-      const k = b.dataset.test; if (!(window.AI && AI.on)) return toast('需要先连接 Genspark');
+      const k = b.dataset.test; if (!(window.AI && AI.on)) return toast('需要先连接 AI');
       tests[k] = { busy: true }; MOD_PAGES.models(p);
       try { const r = await AI.call('/models/test', { engine: cfg.roles[k] }); tests[k] = { ok: true, ms: r.ms, reply: r.reply }; }
       catch (e) { tests[k] = { ok: false, err: e.message }; }

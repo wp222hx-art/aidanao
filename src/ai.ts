@@ -21,28 +21,28 @@ class AiError extends Error { constructor(msg: string, public code = 500) { supe
 
 // ---- 调用 Genspark 工具（与 gsk CLI 同协议：NDJSON 流，最后一行带 status） ----
 async function tool(e: Bindings, name: string, args: Record<string, unknown>) {
-  if (!e.GSK_API_KEY) throw new AiError('未配置 Genspark 授权（GSK_API_KEY）', 503)
+  if (!e.GSK_API_KEY) throw new AiError('未配置 AI 授权（GSK_API_KEY）', 503)
   const r = await fetch(`${base(e)}/api/tool_cli/${name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': e.GSK_API_KEY, 'X-GSK-CLI-Version': 'enterprise-brain/1.0' },
     body: JSON.stringify(args),
   })
   const text = await r.text()
-  if (r.status === 401 || r.status === 403) throw new AiError('Genspark 授权无效或已过期', 401)
-  if (r.status === 429) throw new AiError('Genspark 调用过于频繁，请稍后再试', 429)
+  if (r.status === 401 || r.status === 403) throw new AiError('AI 授权无效或已过期', 401)
+  if (r.status === 429) throw new AiError('AI 调用过于频繁，请稍后再试', 429)
   let final: any = null
   for (const line of text.trim().split('\n')) {
     const l = line.trim(); if (!l.startsWith('{')) continue
     try { const j = JSON.parse(l); if (j.status || j.version === undefined) final = j } catch { }
   }
-  if (!final) throw new AiError(`Genspark 工具 ${name} 无返回（HTTP ${r.status}）`, 502)
-  if (final.status !== 'ok') throw new AiError(final.message || `Genspark 工具 ${name} 调用失败`, 502)
+  if (!final) throw new AiError(`AI 工具 ${name} 无返回（HTTP ${r.status}）`, 502)
+  if (final.status !== 'ok') throw new AiError(final.message || `AI 工具 ${name} 调用失败`, 502)
   return final.data
 }
 
 // ---- 调用大模型（Genspark LLM 代理，同一授权） ----
 async function llm(e: Bindings, system: string, user: string, opt: { json?: boolean; effort?: string; model?: string } = {}) {
-  if (!e.GSK_API_KEY) throw new AiError('未配置 Genspark 授权（GSK_API_KEY）', 503)
+  if (!e.GSK_API_KEY) throw new AiError('未配置 AI 授权（GSK_API_KEY）', 503)
   const body: any = { model: opt.model || model(e), messages: [{ role: 'system', content: system }, { role: 'user', content: user }], reasoning_effort: (opt.effort && opt.effort !== 'low') ? opt.effort : 'high' }
   if (opt.json !== false && !String(body.model).startsWith('claude')) body.response_format = { type: 'json_object' }
   // 一律流式读取：Ultra 深度推理耗时较长，上游对非流式请求约 120s 超时
@@ -50,7 +50,7 @@ async function llm(e: Bindings, system: string, user: string, opt: { json?: bool
   const r = await fetch(`${base(e)}/api/llm_proxy/v1/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${e.GSK_API_KEY}` }, body: JSON.stringify(body),
   })
-  if (r.status === 401 || r.status === 403) throw new AiError('Genspark 授权无效或已过期', 401)
+  if (r.status === 401 || r.status === 403) throw new AiError('AI 授权无效或已过期', 401)
   if (!r.ok) throw new AiError(`大模型调用失败（HTTP ${r.status}）`, 502)
   let content = ''
   if (body.stream && r.body) {
@@ -259,7 +259,7 @@ ai.post('/task/plan', async (c) => {
   const T = tierOf(b.tier), tools = allowTools(b.tier, b.tools)
   const callable = tools.filter((x) => x !== 'crawl')
   const out = await llm(c.env,
-    `${personaBlock(b)}\n\n你以「${T.name}」水准完成任务，先做执行规划：抓住任务本质 → 选定方法论框架 → 制定可量化、可核验的验收标准 → 规划需要调用的 Genspark 工具。验收标准必须包含数字、数量、格式或明确的判定条件，禁止“全面、深入、有效”这类无法核验的措辞。输出 JSON。`,
+    `${personaBlock(b)}\n\n你以「${T.name}」水准完成任务，先做执行规划：抓住任务本质 → 选定方法论框架 → 制定可量化、可核验的验收标准 → 规划需要调用的 AI 工具。验收标准必须包含数字、数量、格式或明确的判定条件，禁止“全面、深入、有效”这类无法核验的措辞。输出 JSON。`,
     `${ctxOf(b)}\n\n任务：${clip(b.task, 200)}\n交付物：${clip(b.deliverable, 120)}\n能力级别要求：${T.rule}\n\n【可用工具（决策调用库）】\n${tools.map((x) => '- ' + TOOL_DESC[x]).join('\n') || '（无外部工具，仅凭专业知识）'}\n工具调用上限：${T.calls} 次${(b.knowledge || []).length ? `\n\n【企业经验库】\n- ${(b.knowledge || []).slice(0, 5).map((k: any) => clip(k, 80)).join('\n- ')}` : ''}${b.feedback ? `\n\n【上一轮验收未通过，问题】${clip(b.feedback, 400)}` : ''}\n\n输出 JSON：{"understanding":"任务本质与成功标志，50字内","framework":"采用的方法论/框架及用法，60字内","criteria":[{"text":"可量化验收标准，30字内"}],"calls":[{"tool":"${callable.join('|') || 'none'}","query":"关键词或画面描述","queries":["batch 时填"],"url":"doc 时填","why":"15字内"}],"read":需要深读的网页数(0-${T.read}),"outline":["成果章节标题，4-7个"]}\n验收标准正好 ${T.crit} 条；calls 不超过 ${T.calls} 个，检索词要具体（含行业、地区、年份、产品等），不需要外部信息时 calls 为空数组。`,
     { model: eng(b, c.env), effort: eff(b) })
   const calls = (Array.isArray(out.calls) ? out.calls : []).filter((x: any) => callable.includes(x?.tool)).slice(0, T.calls).map((x: any) => ({ tool: x.tool, query: clip(x.query, 120), queries: (x.queries || []).slice(0, 4).map((q: any) => clip(q, 60)), url: clip(x.url, 400), why: clip(x.why, 40) }))
@@ -417,7 +417,7 @@ ai.post('/task/slide', async (c) => {
 // =====================================================================
 const IMG_SKIP = /bbox|rmbg|upscale|text-removal|outpaint/i
 ai.get('/models', async (c) => {
-  const e = c.env; if (!e.GSK_API_KEY) throw new AiError('未配置 Genspark 授权（GSK_API_KEY）', 503)
+  const e = c.env; if (!e.GSK_API_KEY) throw new AiError('未配置 AI 授权（GSK_API_KEY）', 503)
   const [m, t] = await Promise.all([
     fetch(`${base(e)}/api/llm_proxy/v1/models`, { headers: { Authorization: `Bearer ${e.GSK_API_KEY}` } }).then((r) => r.json()).catch(() => null),
     fetch(`${base(e)}/api/tool_cli/tools`, { headers: { 'X-Api-Key': e.GSK_API_KEY, 'X-GSK-CLI-Version': 'enterprise-brain/1.0' } }).then((r) => r.json()).catch(() => null),

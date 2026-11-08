@@ -58,7 +58,7 @@
       ${(curT?.ideaHints || []).length ? `<div class="id-hints"><span class="dim">灵感：</span>${curT.ideaHints.map((h) => `<button data-hint="${esc(h)}">${esc(h)}</button>`).join('')}</div>` : ''}
       ${D.mode === 'other' ? `<div class="grid2 mt"><input id="id-nick" placeholder="你的署名（可匿名）" value="${esc(D.nick)}"><input id="id-contact" placeholder="联系方式（选填，企业想联系你时用）" value="${esc(D.contact)}"></div>` : ''}
       <div class="flex mt"><span class="hint" style="flex:1">AI 会保留你的核心想法，结合企业真实业务补全成一份完整策划案，并给出客观评分。</span><button class="btn btn-pri" id="id-write" ${busy === 'write' || !ai() ? 'disabled' : ''}><i class="fas ${busy === 'write' ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}"></i>${busy === 'write' ? 'AI 撰写中（约 1-2 分钟）…' : R ? '重新生成' : 'AI 写成策划案'}</button></div>
-      ${!ai() ? '<div class="hint mt" style="color:var(--bad)">需要连接 Genspark 才能使用 AI 撰写</div>' : ''}`;
+      ${!ai() ? '<div class="hint mt" style="color:var(--bad)">需要连接 AI 才能撰写</div>' : ''}`;
     const resHtml = R ? proposalCard(R) : '';
     const sendHtml = R ? deliverPanel(curT) : '';
     b.innerHTML = `<div class="id-wrap"><div class="id-main">
@@ -128,7 +128,7 @@
     on('#id-gowiz', () => enterBrain());
     const find = async () => {
       const q = ($('#id-q', b)?.value || '').trim(); if (!q) return toast('请输入企业名称');
-      if (!ai()) return toast('需要连接 Genspark 才能识别企业');
+      if (!ai()) return toast('需要连接 AI 才能识别企业');
       D.q = q; busy = 'target'; D.target = null; D.res = null; D.sent = null; save(); rerender();
       try { const r = await AI.call('/idea/target', { name: q, engine: roleModel('research') }); D.target = r; }
       catch (e) { toast('识别失败：' + e.message, 'fa-triangle-exclamation'); }

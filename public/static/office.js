@@ -39,14 +39,14 @@
     const crit = t.criteria || [];
     return {
       sim: true, at: `D${S.sim.day}`, slideModel: officeCfg().slideModel,
-      doc: { title: t.title, subtitle: `${d?.name || ''} · 部门汇报（仿真）`, summary: '仿真模式未连接 Genspark，本汇报材料仅演示结构与流程，不含真实内容。' },
+      doc: { title: t.title, subtitle: `${d?.name || ''} · 部门汇报（仿真）`, summary: '仿真模式：AI 未连接，本汇报材料仅演示结构与流程，不含真实内容。' },
       sheets: [
         { name: '验收对照', title: '验收标准达成情况', columns: ['序号', '验收标准', '结果'], rows: crit.map((c, i) => [i + 1, c, (t.accept?.items?.[i]?.status) === 'met' ? '达标' : '部分达标']), note: '仿真数据' },
         { name: '行动计划', title: '下一步行动计划', columns: ['动作', '负责岗位', '开始', '完成', '量化目标', '状态'], rows: [['确认方案细节', d?.name || '', 'D1', 'D3', '方案定稿 1 份', '待启动'], ['资源与预算确认', '部门负责人', 'D2', 'D5', '预算表 1 份', '待启动'], ['执行与周复盘', d?.name || '', 'D5', 'D30', '每周复盘 1 次', '待启动']], note: '仿真数据' }
       ],
       slides: [
         { layout: 'cover', title: t.title.slice(0, 14), subtitle: `${d?.name || ''} · 部门汇报`, points: [], speaker: '仿真演示：封面页。', visual: '' },
-        { layout: 'insight', title: '核心结论', points: ['仿真模式演示', '连接 Genspark 后生成真实内容'], speaker: '仿真演示：结论页。', visual: '' },
+        { layout: 'insight', title: '核心结论', points: ['仿真模式演示', '连接 AI 后生成真实内容'], speaker: '仿真演示：结论页。', visual: '' },
         { layout: 'plan', title: '行动计划', points: ['确认方案', '资源到位', '执行复盘'], speaker: '仿真演示：计划页。', visual: '' },
         { layout: 'close', title: '需老板拍板', points: ['是否启动执行'], speaker: '仿真演示：决策页。', visual: '' }
       ]
@@ -88,7 +88,7 @@
     const H = (text, lv) => new D.Paragraph({ heading: [D.HeadingLevel.HEADING_1, D.HeadingLevel.HEADING_2, D.HeadingLevel.HEADING_3, D.HeadingLevel.HEADING_4][lv - 1], spacing: { before: 240, after: 120 }, children: runs(D, text, { color: '1E3A8A' }) });
     kids.push(new D.Paragraph({ heading: D.HeadingLevel.TITLE, children: [new D.TextRun({ text: doc.title || r.title, bold: true, size: 40, color: '0F172A' })] }));
     if (doc.subtitle) kids.push(new D.Paragraph({ spacing: { after: 200 }, children: [new D.TextRun({ text: doc.subtitle, size: 24, color: '475569' })] }));
-    kids.push(dTable(D, [['项目', '内容'], ['企业', r.company || S.company.name], ['部门', r.deptName], ['首席大师', r.persona ? `${r.persona.title}「${r.persona.name}」` : '—'], ['负责人', r.owner ? `${r.owner.name}（${r.owner.pos}）` : '—'], ['能力级别', TIERS[r.tier]?.name || ''], ['所属指令', r.cmdNo ? `#${r.cmdNo} ${r.cmdText}` : '—'], ['交付物', r.deliverable || ''], ['验收得分', r.accept ? `${r.accept.total} / 门槛 ${r.accept.threshold}（${r.accept.met}/${(r.accept.items || []).length} 条达标）` : '—'], ['执行方式', r.real ? `Genspark Ultra 推理 · 工具调用 ${r.toolCalls} 次 · 证据 ${r.evidence.length} 条` : '仿真演示']]));
+    kids.push(dTable(D, [['项目', '内容'], ['企业', r.company || S.company.name], ['部门', r.deptName], ['首席大师', r.persona ? `${r.persona.title}「${r.persona.name}」` : '—'], ['负责人', r.owner ? `${r.owner.name}（${r.owner.pos}）` : '—'], ['能力级别', TIERS[r.tier]?.name || ''], ['所属指令', r.cmdNo ? `#${r.cmdNo} ${r.cmdText}` : '—'], ['交付物', r.deliverable || ''], ['验收得分', r.accept ? `${r.accept.total} / 门槛 ${r.accept.threshold}（${r.accept.met}/${(r.accept.items || []).length} 条达标）` : '—'], ['执行方式', r.real ? `Ultra 推理 · 工具调用 ${r.toolCalls} 次 · 证据 ${r.evidence.length} 条` : '仿真演示']]));
     if (doc.summary) { kids.push(H('汇报摘要', 1)); kids.push(new D.Paragraph({ children: runs(D, doc.summary) })); }
     kids.push(H('成果正文', 1));
     for (const b of mdBlocks(r.output)) {

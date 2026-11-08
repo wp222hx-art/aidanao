@@ -1,7 +1,7 @@
 // 企业智脑 · Genspark 真实能力接入层
 // 所有 AI 能力通过本站后端 /api/ai/* 调用 Genspark（企业主本人授权），浏览器不接触密钥。
 (function () {
-  const AI = window.AI = { on: false, user: null, model: '', reason: '', busy: { img: false, video: false, leads: false, brief: false }, running: new Set(), briefing: false, lastLeadScan: 0 };
+  const AI = window.AI = { ready: false, on: false, user: null, model: '', reason: '', busy: { img: false, video: false, leads: false, brief: false }, running: new Set(), briefing: false, lastLeadScan: 0 };
   const CONCURRENCY = 2;
 
   // ---------- 基础调用 ----------
@@ -25,12 +25,14 @@
       const r = await fetch('/api/ai/status', { signal: ctl.signal }).then((x) => x.json());
       AI.on = !!r.connected; AI.user = r.user || null; AI.model = r.model || ''; AI.reason = r.reason || '';
     } catch (e) { AI.on = false; AI.reason = '无法连接 AI 服务'; }
+    AI.ready = true;
     renderPill();
     if (AI.on && S.launched && window.Masters && S.depts?.length) Masters.generate();
   };
 
   // ---------- 连接状态胶囊 ----------
   function pillHtml() {
+    if (!AI.ready) return `<div class="ai-pill wait" title="正在连接 AI 服务"><span class="pulse"></span><b>连接中…</b></div>`;
     if (AI.on) return `<div class="ai-pill on" title="AI 已连接 · 模型 ${esc(AI.model)}"><span class="pulse"></span><b>积分 ${Math.round(AI.user?.credits || 0).toLocaleString()}</b></div>`;
     return `<div class="ai-pill off" title="${esc(AI.reason)}"><span class="pulse"></span><b>仿真模式</b><span class="dim">${esc(AI.reason || 'AI 未连接')}</span></div>`;
   }
@@ -105,7 +107,7 @@
     const P = S.company.profile || {};
     const kws = (kwsIn?.length ? kwsIn : (P.leadKeywords?.length ? P.leadKeywords : (S.industry?.div?.kw || S.industry?.div?.name || '').split(' '))).filter(Boolean);
     const pickKw = [...kws].sort(() => Math.random() - .5).slice(0, 2);
-    simLog('lead', `🛰️ 销售 Agent 调用 Genspark 全网检索采购/招标：${esc(pickKw.join('、'))}`, '#2563eb', cmdId);
+    simLog('lead', `🛰️ 销售 Agent 调用 AI 全网检索采购/招标：${esc(pickKw.join('、'))}`, '#2563eb', cmdId);
     const r = await AI.call('/leads', { ...ctxBase(), keywords: pickKw });
     const out = [];
     (r.leads || []).forEach((l) => {
@@ -140,7 +142,7 @@
     try {
       const r = await AI.call('/brief', { ...ctxBase(), data });
       S.sim.brief = { text: r.text, day: S.sim.day, t: simTime() };
-      simLog('cp', '📰 Genspark AI 经营日报已生成 · <a class="lnk" onclick="gotoView(\'cockpit\')">查看</a>', '#2563eb');
+      simLog('cp', '📰 智导 AI 经营日报已生成 · <a class="lnk" onclick="gotoView(\'cockpit\')">查看</a>', '#2563eb');
       toast('AI 经营日报已生成', 'fa-file-lines');
     } catch (e) { toast('日报生成失败：' + e.message); }
     AI.briefing = false; saveState(); if ($('#brief-card')) gotoView('cockpit');
@@ -150,7 +152,7 @@
   const rerenderStudio = () => { if ($('#pc') || $('.poster-stage')) gotoView('studio'); };
   AI.copy = async function () {
     const st = studioState();
-    toast('Genspark 正在撰写合规文案…', 'fa-wand-magic-sparkles');
+    toast('AI 正在撰写合规文案…', 'fa-wand-magic-sparkles');
     try {
       const r = await AI.call('/copy', { ...ctxBase(), theme: pick(['新品发布', '客户案例', '品牌故事', '行业解决方案', '招商合作']) });
       Object.assign(st, { title: r.title || st.title, sub: r.sub || st.sub, cta: r.cta || st.cta, post: r.post || '', imagePrompt: r.imagePrompt || '', videoPrompt: r.videoPrompt || '' });
@@ -165,16 +167,16 @@
       const r = await AI.call('/image', { prompt, aspect: '3:4' });
       st.bgUrl = r.url;
       await new Promise((ok) => { const im = new Image(); im.onload = () => { window._posterBg = im; ok(); }; im.onerror = ok; im.src = r.url; });
-      simLog('content', `🖼️ Genspark 生成海报画面（${esc(r.model || '')}，约 ${r.credits ?? '?'} 积分）`, '#ff4fa3');
+      simLog('content', `🖼️ AI 生成海报画面（${esc(r.model || '')}，约 ${r.credits ?? '?'} 积分）`, '#ff4fa3');
       toast('AI 海报画面已生成', 'fa-image'); AI.refreshCredits();
     } catch (e) { toast('海报画面生成失败：' + e.message); }
     AI.busy.img = false; st.type = 'poster'; rerenderStudio();
   };
   AI.promoVideo = async function () {
     const st = studioState(); if (AI.busy.video) return;
-    if (!confirm('将调用 Genspark 生成 5 秒宣传短视频（约 110 积分，耗时约 20-90 秒），继续？')) return;
+    if (!confirm('将调用 AI 生成 5 秒宣传短视频（约 110 积分，耗时约 20-90 秒），继续？')) return;
     AI.busy.video = true; rerenderStudio();
-    simLog('content', '🎬 视频剪辑官调用 Genspark 生成宣传短视频…', '#ff4fa3');
+    simLog('content', '🎬 视频剪辑官调用 AI 生成宣传短视频…', '#ff4fa3');
     const prompt = st.videoPrompt || `Cinematic 5-second commercial for ${S.company.profile?.business || S.industry?.div?.name}, smooth camera motion, premium product and team shots, modern brand film style, vertical`;
     try {
       const r = await AI.call('/video', { prompt, aspect: '9:16' });
@@ -191,14 +193,14 @@
 
   // ---------- Genspark 超级智能体（深度任务） ----------
   AI.deepAgent = async function (t) {
-    if (!confirm('将把该任务交给 Genspark 超级智能体深度执行（会多步检索、分析，可能耗时数分钟并消耗较多积分），继续？')) return;
+    if (!confirm('将把该任务交给智导超级智能体深度执行（会多步检索、分析，可能耗时数分钟并消耗较多积分），继续？')) return;
     const d = S.depts.find((x) => x.id === t.deptId);
     const query = `我是「${S.company.name}」（${S.industry?.name} › ${S.industry?.div?.name}）的老板。企业主营：${S.company.profile?.business || S.company.profile?.positioning || ''}。\n请以「${d?.name}」负责人的身份深度完成以下任务：${t.title}。\n交付物要求：${t.deliverable || '结构化、可执行的中文成果'}。${t.output ? `\n\n已有初稿供参考：\n${t.output.slice(0, 1500)}` : ''}\n\n请先检索事实与数据，再给出结论、依据来源、执行步骤与风险提示。`;
     try {
       const r = await AI.call('/agent', { name: `智脑·${d?.name || ''}·${t.title}`.slice(0, 40), query });
       t.deep = { runId: r.runId, state: r.state || 'queued', at: `D${S.sim.day} ${simTime()}` };
-      simLog('task', `🧠 「${esc(t.title.slice(0, 20))}」已交给 Genspark 超级智能体深度执行`, '#7c3aed', t.cmdId);
-      toast('已提交 Genspark 超级智能体', 'fa-brain'); saveState(); pollDeep(t); openTaskModal(t.id);
+      simLog('task', `🧠 「${esc(t.title.slice(0, 20))}」已交给智导超级智能体深度执行`, '#7c3aed', t.cmdId);
+      toast('已提交智导超级智能体', 'fa-brain'); saveState(); pollDeep(t); openTaskModal(t.id);
     } catch (e) { toast('提交失败：' + e.message); }
   };
   async function pollDeep(t) {

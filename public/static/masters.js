@@ -79,7 +79,7 @@
       </article>`; }).join('')}</div>`;
     $('#ms-slides').onchange = (e) => { cfg.slides = +e.target.value; saveState(); };
     $('#ms-rules-save').onclick = () => { mc.rules = $('#ms-rules').value.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 20); saveState(); toast(`已保存 ${mc.rules.length} 条全员边界，后续任务立即生效`, 'fa-shield-halved'); };
-    $('#ms-regen').onclick = () => { M.generate(true).then((ok) => { if (!ok) toast('需要连接 Genspark 才能 AI 生成大师身份'); if ($('#page')) MOD_PAGES.masters($('#page')); }); MOD_PAGES.masters(p); };
+    $('#ms-regen').onclick = () => { M.generate(true).then((ok) => { if (!ok) toast('需要连接 AI 才能生成大师身份'); if ($('#page')) MOD_PAGES.masters($('#page')); }); MOD_PAGES.masters(p); };
     $$('[data-edit]', p).forEach((b) => b.onclick = () => editMaster(b.dataset.edit));
   };
   window.onMastersChange = () => { if (window.currentView && currentView() === 'masters' && $('#page')) MOD_PAGES.masters($('#page')); };

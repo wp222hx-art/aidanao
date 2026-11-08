@@ -1093,3 +1093,9 @@ ul.bd li{color:#9a3412}ul.bd li::marker{content:"⛔ ";font-size:10px}
 .id-mode.dir-b .id-dir{background:rgba(236,72,153,0.10);color:#db2777}
 /* 导航「主页」按钮 */
 .nav-home{color:var(--c1);border-bottom:1px dashed var(--line2);border-radius:12px 12px 0 0;margin-bottom:4px}
+
+/* 胶囊：连接中 */
+.ai-pill.wait{border-color:rgba(37,99,235,0.30);background:rgba(37,99,235,0.05)}
+.ai-pill.wait b{color:var(--c1);font-weight:600}
+.ai-pill.wait .pulse{background:var(--c1);animation:pillWait 1s ease-in-out infinite}
+@keyframes pillWait{0%,100%{opacity:.25}50%{opacity:1}}
