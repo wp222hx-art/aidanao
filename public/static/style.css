@@ -1465,3 +1465,22 @@ input:focus,textarea:focus,select:focus{box-shadow:0 0 0 4px rgba(59,108,246,.12
   .hx-grid{grid-template-columns:repeat(4,1fr);gap:8px}.hx-chip b{font-size:16px}.hx-chip span{font-size:11px}
 }
 @media(max-width:640px){.hx-hero h1 .grad-txt{display:inline-block}}
+
+/* ===== 后台 · 连接 Genspark ===== */
+.gs-status{display:flex;align-items:center;gap:14px;padding:18px 20px;border-radius:18px;border:1px solid var(--line);background:#fff;box-shadow:var(--sh-1);margin-bottom:16px}
+.gs-status.on{background:linear-gradient(135deg,#ecfdf5,#fff);border-color:#a7f3d0}
+.gs-status.off{background:linear-gradient(135deg,#fff7ed,#fff);border-color:#fed7aa}
+.gs-dot{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:18px;color:#fff;background:#f59e0b}
+.gs-status.on .gs-dot{background:linear-gradient(135deg,#10b981,#059669)}
+.gs-main{flex:1;display:flex;flex-direction:column;gap:2px}.gs-main b{font-size:17px}.gs-main span{font-size:13px;color:var(--sub)}
+.gs-cred{text-align:right}.gs-cred small{display:block;font-size:12px;color:var(--sub)}.gs-cred b{font-size:22px;color:#047857}
+.gs-grid{grid-template-columns:1.3fr 1fr}
+@media(max-width:1000px){.gs-grid{grid-template-columns:1fr}}
+.gs-cur{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px}.gs-cur small{color:var(--sub)}
+.gs-l{display:flex;justify-content:space-between;margin:14px 0 6px;font-size:13px;font-weight:600}.gs-l small{font-weight:400;color:var(--sub)}
+.gs-key{display:flex;gap:8px}.gs-key input{flex:1;font-family:ui-monospace,monospace}
+#gs-model,.gs-adv input{width:100%}
+.gs-adv{margin-top:12px;font-size:13px}.gs-adv summary{cursor:pointer;color:var(--sub)}.gs-adv input{margin-top:8px}.gs-adv small{color:var(--sub);font-size:12px}
+.gs-steps,.gs-safe{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.9;color:#334155}
+.gs-steps a{color:var(--c1)}
+.ai-pill.off .dim{color:#b45309;text-decoration:underline dotted}

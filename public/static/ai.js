@@ -34,13 +34,15 @@
   function pillHtml() {
     if (!AI.ready) return `<div class="ai-pill wait" title="正在连接 AI 服务"><span class="pulse"></span><b>连接中…</b></div>`;
     if (AI.on) return `<div class="ai-pill on" title="AI 已连接 · 模型 ${esc(AI.model)}"><span class="pulse"></span><b>积分 ${Math.round(AI.user?.credits || 0).toLocaleString()}</b></div>`;
-    return `<div class="ai-pill off" title="${esc(AI.reason)}"><span class="pulse"></span><b>仿真模式</b><span class="dim">${esc(AI.reason || 'AI 未连接')}</span></div>`;
+    return `<div class="ai-pill off" title="${esc(AI.reason)} · 点击去连接"><span class="pulse"></span><b>仿真模式</b><span class="dim">点击连接 AI</span></div>`;
   }
   function renderPill() {
     $$('.ai-pill').forEach((e) => e.remove());
     const w = $('.wiz-top #btn-demo'); if (w) w.insertAdjacentHTML('beforebegin', pillHtml());
     const h = $('.hq-top .kpis'); if (h) h.insertAdjacentHTML('beforebegin', pillHtml());
     const hm = $('#home-pill'); if (hm) hm.innerHTML = pillHtml();
+    // 点击状态胶囊 → 后台「连接 Genspark」设置
+    $$('.ai-pill').forEach((p) => { p.style.cursor = 'pointer'; p.onclick = () => window.openAdmin && openAdmin('gsk'); });
   }
   AI.refreshCredits = async () => { try { const r = await fetch('/api/ai/status').then((x) => x.json()); if (r.connected) { AI.user = r.user; renderPill(); } } catch { } };
 

@@ -10,10 +10,11 @@
     return j;
   };
   const dt = (t) => t ? new Date(t).toLocaleString('zh-CN', { hour12: false }).slice(0, 16) : '—';
-  const TABS = [['overview', 'fa-chart-line', '运营总览'], ['market', 'fa-coins', '智点与撮合'], ['ideas', 'fa-lightbulb', '献策审核'], ['companies', 'fa-building', '入驻企业'], ['emails', 'fa-envelope', '邮件与退订'], ['cs', 'fa-headset', '客服会话'], ['sites', 'fa-globe', '网站交付'], ['cache', 'fa-database', '数据缓存']];
+  const TABS = [['overview', 'fa-chart-line', '运营总览'], ['gsk', 'fa-plug', '连接 Genspark'], ['market', 'fa-coins', '智点与撮合'], ['ideas', 'fa-lightbulb', '献策审核'], ['companies', 'fa-building', '入驻企业'], ['emails', 'fa-envelope', '邮件与退订'], ['cs', 'fa-headset', '客服会话'], ['sites', 'fa-globe', '网站交付'], ['cache', 'fa-database', '数据缓存']];
   const KN = { proposal: '策划案', suggestion: '改进建议', design: '设计思路' }, CHN = { inbox: '直推收件箱', email: '邮件代发', public: '公开献策' };
 
-  window.openAdmin = function () {
+  window.openAdmin = function (t) {
+    if (t && TABS.some(([k]) => k === t)) tab = t;
     document.querySelector('.adm-overlay')?.remove();
     const o = document.createElement('div'); o.className = 'adm-overlay'; o.innerHTML = '<section class="adm"></section>';
     document.body.appendChild(o); host = o.firstChild; render();
@@ -41,8 +42,8 @@
   async function load() {
     const m = $('#adm-main', host);
     try {
-      const path = { market: '/market', overview: '/overview', ideas: `/ideas?q=${encodeURIComponent(q)}&f=${f}`, companies: '/companies', emails: '/emails', cs: '/cs', sites: '/sites', cache: '/cache' }[tab];
-      data[tab] = await api(path); ({ market, overview, ideas, companies, emails, cs, sites, cache })[tab](m, data[tab]);
+      const path = { gsk: '/gsk', market: '/market', overview: '/overview', ideas: `/ideas?q=${encodeURIComponent(q)}&f=${f}`, companies: '/companies', emails: '/emails', cs: '/cs', sites: '/sites', cache: '/cache' }[tab];
+      data[tab] = await api(path); ({ gsk, market, overview, ideas, companies, emails, cs, sites, cache })[tab](m, data[tab]);
     } catch (e) { if (e.auth) return render(); m.innerHTML = `<div class="cmd-alert"><i class="fas fa-triangle-exclamation"></i> ${esc(e.message)}</div>`; }
   }
   const hd = (t, s, right = '') => `<div class="adm-hd"><div><h2>${t}</h2><p class="hint">${s}</p></div><div class="flex">${right}<button class="btn btn-ghost btn-sm" data-reload><i class="fas fa-rotate"></i>刷新</button></div></div>`;
@@ -62,6 +63,54 @@
     if (window.Chart) draw(); else { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/chart.js'; s.onload = draw; document.head.appendChild(s); }
   }
   const KIND = { submit: '提交献策', like: '点赞', reply: '企业回复', adopt: '采纳奖励', bounty: '悬赏', tip: '打赏', done: '落地验收', feature: '精选', share: '共享方案', use: '方案被用', royalty: '方案分成', buy: '购买方案', grant: '入驻礼包', escrow: '悬赏托管', refund: '托管退回' };
+
+  // ---------- 连接 Genspark：AI 引擎授权（Key 加密存储，保存前先验证） ----------
+  const MN = { 'gpt-5.5': 'GPT-5.5 Ultra（默认）', 'claude-opus-5-5': 'Claude Opus 5.5 Ultra', 'gpt-6.1-sol': 'GPT-6.1 Sol Ultra', 'gpt-6-astra': 'GPT-6 Astra Ultra' };
+  const SRC = { settings: ['ok', '后台设置'], env: ['warn', '环境变量'], none: ['', '未配置'] };
+  async function gsk(m, d) {
+    const u = d.user || {}, [sc, sn] = SRC[d.source] || SRC.none;
+    m.innerHTML = hd('连接 Genspark', '平台所有 AI 能力（深度研究、写方案、生成海报 / 视频 / 网站、客服）都通过这里的 Genspark 账户调用，积分从该账户扣除') + `
+      <div class="gs-status ${d.connected ? 'on' : 'off'}">
+        <div class="gs-dot"><i class="fas ${d.connected ? 'fa-link' : 'fa-link-slash'}"></i></div>
+        <div class="gs-main"><b>${d.connected ? '已连接' : '未连接'}</b><span>${d.connected ? `${esc(u.name || '')} · ${esc(u.email || '')}${u.plan ? ' · ' + esc(String(u.plan).toUpperCase()) : ''}` : esc(d.reason || '请填写 API Key')}</span></div>
+        ${d.connected ? `<div class="gs-cred"><small>剩余积分</small><b>${Math.round(u.credits || 0).toLocaleString()}</b></div>` : ''}
+      </div>
+      <div class="adm-grid gs-grid">
+        <div class="card">
+          <div class="h4"><i class="fas fa-key" style="color:#f59e0b"></i> API Key</div>
+          <div class="gs-cur">当前：<code>${esc(d.masked || '—')}</code> <span class="tag ${sc}">${sn}</span>${d.updatedAt ? `<small>更新于 ${dt(d.updatedAt)}</small>` : ''}</div>
+          <label class="gs-l">新的 API Key<small>留空 = 保持当前 Key 不变</small></label>
+          <div class="gs-key"><input id="gs-key" type="password" placeholder="粘贴 Genspark API Key" autocomplete="off" spellcheck="false"><button class="btn btn-ghost btn-sm" id="gs-eye" title="显示 / 隐藏"><i class="fas fa-eye"></i></button></div>
+          <label class="gs-l">默认推理引擎</label>
+          <select id="gs-model">${d.models.map((k) => `<option value="${k}" ${k === d.model ? 'selected' : ''}>${MN[k] || k}</option>`).join('')}</select>
+          <details class="gs-adv"><summary>高级：服务地址</summary><input id="gs-base" value="${esc(d.base)}" placeholder="https://www.genspark.ai"><small>只接受 https 的 Genspark 域名</small></details>
+          <div id="gs-msg"></div>
+          <div class="flex mt"><button class="btn btn-ghost" id="gs-test"><i class="fas fa-vial"></i>测试连接</button><button class="btn btn-pri" id="gs-save"><i class="fas fa-floppy-disk"></i>验证并保存</button><div style="flex:1"></div>${d.source === 'settings' ? '<button class="btn btn-ghost btn-sm" id="gs-clear"><i class="fas fa-rotate-left"></i>恢复环境变量</button>' : ''}</div>
+        </div>
+        <div class="card">
+          <div class="h4"><i class="fas fa-circle-question" style="color:var(--c1)"></i> 怎么获取 API Key</div>
+          <ol class="gs-steps"><li>登录 <a href="https://www.genspark.ai" target="_blank" rel="noopener">genspark.ai</a></li><li>进入账户设置 → API Keys，新建一个 Key</li><li>粘贴到左侧，点「验证并保存」</li></ol>
+          <div class="h4 mt"><i class="fas fa-shield-halved" style="color:var(--ok)"></i> 安全说明</div>
+          <ul class="gs-safe"><li>Key 保存前会先向 Genspark 验证，无效的 Key 不会保存</li><li>加密（AES-GCM）存入数据库，页面上只显示首尾几位</li><li>浏览器端永远拿不到 Key，所有 AI 调用都在服务端完成</li><li>后台保存的 Key 优先于环境变量；点「恢复环境变量」即可回退</li><li>修改管理口令后需重新保存 Key</li></ul>
+        </div>
+      </div>`;
+    bindReload(m);
+    const body = () => ({ apiKey: $('#gs-key', m).value.trim(), model: $('#gs-model', m).value, baseUrl: $('#gs-base', m).value.trim() });
+    const msg = (ok, t) => { $('#gs-msg', m).innerHTML = `<div class="fb-box ${ok ? 'ok' : 'warn'} mt"><i class="fas ${ok ? 'fa-circle-check' : 'fa-triangle-exclamation'}"></i> ${t}</div>`; };
+    $('#gs-eye', m).onclick = () => { const i = $('#gs-key', m); i.type = i.type === 'password' ? 'text' : 'password'; };
+    $('#gs-test', m).onclick = async (e) => {
+      const b = body(); if (!b.apiKey) return msg(false, '先粘贴要测试的 API Key');
+      const btn = e.currentTarget; btn.disabled = true;
+      try { const r = await api('/gsk/test', b); r.valid ? msg(true, `连接成功：${esc(r.user.name || r.user.email)} · 剩余 ${Math.round(r.user.credits || 0).toLocaleString()} 积分`) : msg(false, esc(r.reason)); }
+      catch (err) { msg(false, esc(err.message)); } finally { btn.disabled = false; }
+    };
+    $('#gs-save', m).onclick = async (e) => {
+      const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>验证中…';
+      try { await api('/gsk/save', body()); toast('Genspark 连接已保存，立即生效', 'fa-link'); window.AI?.init && AI.init(); load(); }
+      catch (err) { msg(false, esc(err.message)); btn.disabled = false; btn.innerHTML = '<i class="fas fa-floppy-disk"></i>验证并保存'; }
+    };
+    const cl = $('#gs-clear', m); if (cl) cl.onclick = async () => { if (!confirm('清除后台保存的 Key，改用环境变量中的配置？')) return; await act('/gsk/clear', {}, '已恢复为环境变量配置'); window.AI?.init && AI.init(); };
+  }
   async function market(m, d) {
     const [ch, so] = await Promise.all([fetch('/api/mkt/challenges?status=all').then((r) => r.json()), fetch('/api/mkt/solutions').then((r) => r.json())]);
     m.innerHTML = hd('智点与撮合', '智点发放 / 消耗流水、征集令与同行方案的运营与审核；所有加减分都有唯一流水号，可追溯、防重复') + `

@@ -3,8 +3,9 @@ import { Hono } from 'hono'
 import { AiError, clip } from './ai'
 import { now, db, DAY } from './svc-util'
 import { RULES, credit, userOf } from './market-util'
+import { readGsk, seal, probe, mask, bust, GSK_HOST_RE, DEFAULT_BASE } from './settings'
 
-type Bindings = { DB?: D1Database; ADMIN_CODE?: string }
+type Bindings = { DB?: D1Database; ADMIN_CODE?: string; GSK_API_KEY?: string; GSK_BASE_URL?: string; AI_MODEL?: string; ENV_GSK_API_KEY?: string }
 const admin = new Hono<{ Bindings: Bindings }>()
 admin.onError((err, c) => c.json({ ok: false, error: err.message || '后台服务异常' }, (err instanceof AiError ? err.code : 500) as any))
 
@@ -102,3 +103,39 @@ admin.get('/cache', async (c) => {
 admin.post('/cache/clear', async (c) => { const b = await c.req.json<any>(); const k = clip(b.key, 200); await (k ? db(c).prepare('DELETE FROM data_cache WHERE key = ?').bind(k) : db(c).prepare('DELETE FROM data_cache')).run(); return c.json({ ok: true }) })
 
 export default admin
+
+// ---------- 连接 Genspark（AI 引擎）：查看状态 / 测试 / 保存 / 清除 ----------
+const MODELS = ['gpt-5.5', 'claude-opus-5-5', 'gpt-6.1-sol', 'gpt-6-astra']
+const cleanBase = (u: unknown) => { const v = String(u || '').trim().replace(/\/+$/, '') || DEFAULT_BASE; if (!GSK_HOST_RE.test(v)) throw new AiError('服务地址必须是 https 的 Genspark 域名', 400); return v }
+admin.get('/gsk', async (c) => {
+  const saved = await readGsk(c.env.DB, c.env.ADMIN_CODE)
+  const envKey = (c.env as any).__ENV_GSK_KEY ?? c.env.GSK_API_KEY
+  const key = saved.GSK_API_KEY || envKey || '', base = saved.GSK_BASE_URL || c.env.GSK_BASE_URL || DEFAULT_BASE
+  const source = saved.GSK_API_KEY ? 'settings' : envKey ? 'env' : 'none'
+  const st = key ? await probe(key, base) : { ok: false, reason: '尚未连接' }
+  const row = await c.env.DB?.prepare("SELECT updated_at FROM settings WHERE key = 'gsk_key'").first<any>().catch(() => null)
+  return c.json({ ok: true, source, masked: mask(key), base, model: saved.AI_MODEL || c.env.AI_MODEL || 'gpt-5.5', models: MODELS, connected: st.ok, user: (st as any).user || null, reason: (st as any).reason || '', updatedAt: row?.updated_at || null })
+})
+admin.post('/gsk/test', async (c) => {
+  const b = await c.req.json<any>(); const key = String(b.apiKey || '').trim()
+  if (!key) throw new AiError('请填写 API Key', 400)
+  const st: any = await probe(key, cleanBase(b.baseUrl))
+  return c.json({ ok: true, valid: !!st.ok, user: st.user || null, reason: st.reason || '' })
+})
+admin.post('/gsk/save', async (c) => {
+  const D = db(c), b = await c.req.json<any>(), t = now(), base = cleanBase(b.baseUrl)
+  const key = String(b.apiKey || '').trim()
+  if (key) {
+    if (key.length < 16 || key.length > 400 || /\s/.test(key)) throw new AiError('API Key 格式不正确', 400)
+    const st = await probe(key, base); if (!st.ok) throw new AiError(st.reason || '连接失败，未保存', 400)
+    await D.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').bind('gsk_key', await seal(c.env.ADMIN_CODE as string, key), t).run()
+  }
+  await D.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').bind('gsk_base', base, t).run()
+  if (MODELS.includes(b.model)) await D.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').bind('ai_model', b.model, t).run()
+  bust()
+  return c.json({ ok: true })
+})
+admin.post('/gsk/clear', async (c) => {
+  await db(c).prepare("DELETE FROM settings WHERE key IN ('gsk_key','gsk_base','ai_model')").run(); bust()
+  return c.json({ ok: true })
+})

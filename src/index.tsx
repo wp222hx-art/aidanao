@@ -5,8 +5,12 @@ import svcRoutes, { serveSite } from './svc'
 import csRoutes, { widgetJs, chatPage } from './cs'
 import adminRoutes from './admin'
 import mktRoutes from './market'
+import { gskOverlay } from './settings'
 
 const app = new Hono<{ Bindings: { GSK_API_KEY?: string; BRAIN_ACCESS_CODE?: string; DB?: D1Database; ADMIN_CODE?: string } }>()
+
+// 后台「连接 Genspark」保存的配置优先于环境变量（保存后立即生效）
+app.use('*', gskOverlay)
 
 // 访问口令（可选）：设置 BRAIN_ACCESS_CODE 后，调用 AI 接口须携带 X-Brain-Code，防止他人消耗你的 Genspark 积分
 app.use('/api/ai/*', async (c, next) => {
